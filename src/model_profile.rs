@@ -27,14 +27,6 @@ pub fn resolve_behavior_class(config: &ModelConfig, model_name: &str) -> Option<
         .map(|(_, class)| class.clone())
 }
 
-fn wildcard_match(pattern: &str, value: &str) -> bool {
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        value.starts_with(prefix)
-    } else {
-        value == pattern
-    }
-}
-
 pub fn should_auto_tune(sample_count: u64) -> bool {
     sample_count >= 50 && sample_count % 50 == 0
 }

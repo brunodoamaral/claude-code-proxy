@@ -81,6 +81,13 @@ pub struct RequestRecord {
     pub analyzed: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelProfileAssignment {
+    pub model_name: String,
+    pub behavior_class: Option<String>,
+    pub sample_count: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
