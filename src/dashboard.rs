@@ -40,6 +40,7 @@ fn build_dashboard_app(store: Arc<StatsStore>) -> Router {
         .route("/api/stats", get(api_stats))
         .route("/api/entries", get(api_entries))
         .route("/api/sessions", get(api_sessions))
+        .route("/api/sessions/merged", get(api_sessions_merged))
         .route("/api/correlations", get(api_correlations))
         .route("/api/explanations", get(api_explanations))
         .route("/api/timeline", get(api_timeline))
@@ -196,6 +197,27 @@ async fn api_entries(
 async fn api_sessions(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
     let sessions = store.get_sessions();
     axum::Json(sessions)
+}
+
+#[derive(serde::Serialize)]
+struct VersionedEnvelope<T: serde::Serialize> {
+    version: &'static str,
+    generated_at_ms: i64,
+    data: T,
+}
+
+const API_CONTRACT_VERSION: &str = "2026-04-11";
+
+fn versioned<T: serde::Serialize>(data: T) -> VersionedEnvelope<T> {
+    VersionedEnvelope {
+        version: API_CONTRACT_VERSION,
+        generated_at_ms: chrono::Utc::now().timestamp_millis(),
+        data,
+    }
+}
+
+async fn api_sessions_merged(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
+    axum::Json(versioned(store.get_merged_sessions()))
 }
 
 #[derive(serde::Serialize)]
@@ -470,7 +492,7 @@ async fn api_correlations(
     Query(q): Query<CorrelationsQuery>,
 ) -> impl IntoResponse {
     let links = store.get_correlations_for_request(&q.request_id, q.limit.unwrap_or(50));
-    axum::Json(links)
+    axum::Json(versioned(links))
 }
 
 async fn api_explanations(
@@ -478,7 +500,7 @@ async fn api_explanations(
     Query(q): Query<ExplanationsQuery>,
 ) -> impl IntoResponse {
     let rows = store.get_explanations_for_request(&q.request_id, q.limit.unwrap_or(10));
-    axum::Json(rows)
+    axum::Json(versioned(rows))
 }
 
 async fn api_timeline(
@@ -534,7 +556,7 @@ async fn api_timeline(
         request_items.truncate(cap);
     }
 
-    axum::Json(request_items)
+    axum::Json(versioned(request_items))
 }
 
 async fn api_session_graph(
@@ -550,7 +572,7 @@ async fn api_session_graph(
             edges: Vec::new(),
         });
 
-    axum::Json(graph)
+    axum::Json(versioned(graph))
 }
 
 #[derive(serde::Deserialize)]
@@ -669,7 +691,7 @@ async fn api_session_details(
             .into_response();
     }
 
-    (StatusCode::OK, Json(details)).into_response()
+    (StatusCode::OK, Json(versioned(details))).into_response()
 }
 
 
@@ -1366,7 +1388,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(envelope.get("version").and_then(|v| v.as_str()), Some("2026-04-11"));
+        let payload = &envelope["data"];
         assert_eq!(payload.get("session_id").and_then(|v| v.as_str()), Some("unknown"));
         assert!(payload
             .get("requests")
@@ -1673,7 +1697,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let rows: Vec<Explanation> = serde_json::from_slice(&body).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(envelope.get("version").and_then(|v| v.as_str()), Some("2026-04-11"));
+        let rows: Vec<Explanation> = serde_json::from_value(envelope["data"].clone()).unwrap();
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "exp-1");
@@ -1724,7 +1750,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(envelope.get("version").and_then(|v| v.as_str()), Some("2026-04-11"));
+        let items: Vec<serde_json::Value> = serde_json::from_value(envelope["data"].clone()).unwrap();
 
         assert_eq!(items.len(), 2);
         let first_ts = items[0].get("timestamp_ms").and_then(|v| v.as_i64()).unwrap();
@@ -1793,7 +1821,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let graph: SessionGraph = serde_json::from_slice(&body).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(envelope.get("version").and_then(|v| v.as_str()), Some("2026-04-11"));
+        let graph: SessionGraph = serde_json::from_value(envelope["data"].clone()).unwrap();
 
         assert_eq!(graph.session_id, "s-1");
         assert!(graph.nodes.iter().any(|n| n.kind == "request"));
@@ -1875,7 +1905,10 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let links: Vec<RequestCorrelation> = serde_json::from_slice(&body).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(envelope.get("version").and_then(|v| v.as_str()), Some("2026-04-11"));
+        assert!(envelope.get("generated_at_ms").and_then(|v| v.as_i64()).is_some());
+        let links: Vec<RequestCorrelation> = serde_json::from_value(envelope["data"].clone()).unwrap();
 
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].id, "corr-1");
@@ -2442,5 +2475,43 @@ mod tests {
         assert_eq!(delete_payload.get("ok").and_then(|v| v.as_bool()), Some(true));
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn merged_sessions_endpoint_returns_versioned_envelope() {
+        let log_dir = std::env::temp_dir().join(format!(
+            "claude-proxy-dashboard-merged-sessions-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&log_dir).unwrap();
+
+        let store = Arc::new(StatsStore::new(20, log_dir.clone(), 20.0, 8.0, 2_097_152, log_dir.clone()));
+
+        let mut req = sample_entry();
+        req.id = "req-merged-endpoint-1".into();
+        req.session_id = Some("s-endpoint".into());
+        store.add_entry(req);
+
+        let app = build_dashboard_app(store);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/sessions/merged")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(payload.get("version").and_then(|v| v.as_str()), Some("2026-04-11"));
+        assert!(payload.get("generated_at_ms").and_then(|v| v.as_i64()).is_some());
+        assert!(payload.get("data").and_then(|v| v.as_array()).map(|arr| !arr.is_empty()).unwrap_or(false));
+
+        let _ = std::fs::remove_dir_all(&log_dir);
     }
 }
