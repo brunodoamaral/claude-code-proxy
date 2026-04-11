@@ -1666,7 +1666,7 @@ async function loadCorrelations(requestId) {
       return;
     }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const links = await resp.json();
+    const links = envelopeData(await resp.json());
 
     if (selectedRequestId !== requestId) return;
 
@@ -1675,7 +1675,7 @@ async function loadCorrelations(requestId) {
       return;
     }
 
-    list.innerHTML = links.map(link => {
+    list.innerHTML = '<div style="color:var(--text-2);font-size:11px;margin-bottom:6px">Confidence is heuristic (ranking signal, not probability).</div>' + links.map(link => {
       const created = Number.isFinite(link.created_at_ms) ? new Date(link.created_at_ms).toLocaleTimeString() : '—';
       const confidence = Number.isFinite(link.confidence) ? (link.confidence * 100).toFixed(0) + '%' : '—';
       return `
@@ -1708,7 +1708,7 @@ async function loadExplanations(requestId) {
       return;
     }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const rows = await resp.json();
+    const rows = envelopeData(await resp.json());
 
     if (selectedRequestId !== requestId) return;
 
@@ -1717,7 +1717,7 @@ async function loadExplanations(requestId) {
       return;
     }
 
-    list.innerHTML = rows.map(row => {
+    list.innerHTML = '<div style="color:var(--text-2);font-size:11px;margin-bottom:6px">Confidence is heuristic (ranking signal, not probability).</div>' + rows.map(row => {
       const confidence = Number.isFinite(row.confidence) ? (row.confidence * 100).toFixed(0) + '%' : '—';
       return `
         <div class="correlation-item">
@@ -1749,7 +1749,7 @@ async function loadSessionTimeline(sessionId, targetElementId = 'session-timelin
       return [];
     }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const items = await resp.json();
+    const items = envelopeData(await resp.json());
 
     if (targetElementId === 'session-timeline-list' && selectedSessionId !== sessionId) return items;
 
@@ -1790,7 +1790,7 @@ async function loadSessionGraph(sessionId, targetElementId, limit = 200) {
       return null;
     }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const graph = await resp.json();
+    const graph = envelopeData(await resp.json());
 
     if (!graph || !Array.isArray(graph.nodes)) {
       if (list) list.innerHTML = '<div style="color:var(--text-2);font-size:12px">No graph data available.</div>';
@@ -2379,49 +2379,22 @@ async function loadSessions() {
   const token = ++sessionsRequestToken;
 
   try {
-    const [proxyResp, claudeResp] = await Promise.all([
-      fetch('/api/sessions'),
-      fetch('/api/claude-sessions')
-    ]);
-    if (!proxyResp.ok) throw new Error(`Sessions HTTP ${proxyResp.status}`);
-    if (!claudeResp.ok) throw new Error(`Claude sessions HTTP ${claudeResp.status}`);
+    const resp = await fetch('/api/sessions/merged');
+    if (!resp.ok) throw new Error(`Sessions HTTP ${resp.status}`);
 
-    const proxySessions = await proxyResp.json();
-    const claudeSessions = await claudeResp.json();
+    const mergedRows = envelopeData(await resp.json());
     if (token !== sessionsRequestToken) return;
 
-    const merged = new Map();
-    for (const s of proxySessions) {
-      merged.set(s.session_id, { session_id: s.session_id, proxy: s, local: null });
-    }
-    for (const s of claudeSessions) {
-      const current = merged.get(s.session_id) || { session_id: s.session_id, proxy: null, local: null };
-      current.local = s;
-      merged.set(s.session_id, current);
-    }
-
-    const parseIsoMs = (value) => {
-      if (!value || typeof value !== 'string') return 0;
-      const parsed = Date.parse(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    };
-
-    const rows = Array.from(merged.values()).map((row) => {
-      const proxyRequestCount = Number(row.proxy?.request_count) || 0;
-      const localRequestCount = Number(row.local?.request_count) || 0;
-      const proxyErrorCount = Number(row.proxy?.error_count) || 0;
-      const proxyStallCount = Number(row.proxy?.stall_count) || 0;
-      const localLastActivity = Number(row.local?.last_local_activity_ms) || Number(row.local?.last_modified_ms) || 0;
-      const proxyLastActivity = Number(row.local?.last_proxy_activity_ms) || parseIsoMs(row.proxy?.last_request);
-      const lastActivityMs = Math.max(localLastActivity, proxyLastActivity, parseIsoMs(row.proxy?.first_request));
-
+    const rows = (Array.isArray(mergedRows) ? mergedRows : []).map((row) => {
       return {
-        ...row,
-        proxyRequestCount,
-        localRequestCount,
-        proxyErrorCount,
-        proxyStallCount,
-        lastActivityMs,
+        session_id: row.session_id,
+        proxy: row.presence === 'proxy' || row.presence === 'both' ? row : null,
+        local: row.presence === 'local' || row.presence === 'both' ? row : null,
+        proxyRequestCount: Number(row.proxy_request_count) || 0,
+        localRequestCount: Number(row.local_event_count) || 0,
+        proxyErrorCount: Number(row.proxy_error_count) || 0,
+        proxyStallCount: Number(row.proxy_stall_count) || 0,
+        lastActivityMs: Number(row.last_activity_ms) || 0,
       };
     }).sort((a, b) => b.lastActivityMs - a.lastActivityMs || String(a.session_id).localeCompare(String(b.session_id)));
 
@@ -2498,7 +2471,7 @@ async function loadSessionDetails(sessionId, opts = {}) {
     return { notFound: true };
   }
   if (!detailsResp.ok) throw new Error(`HTTP ${detailsResp.status}`);
-  const payload = await detailsResp.json();
+  const payload = envelopeData(await detailsResp.json());
 
   if (token !== sessionDetailsRequestToken || selectedSessionId !== sessionId) return null;
   return payload;
@@ -2930,6 +2903,13 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function envelopeData(payload) {
+  if (payload && typeof payload === 'object' && payload.data !== undefined) {
+    return payload.data;
+  }
+  return payload;
 }
 
 function formatDuration(s) {

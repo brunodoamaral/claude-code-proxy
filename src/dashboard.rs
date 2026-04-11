@@ -840,6 +840,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dashboard_html_uses_merged_sessions_endpoint() {
+        let html = include_str!("dashboard.html");
+        assert!(html.contains("/api/sessions/merged"));
+    }
+
+    #[tokio::test]
+    async fn dashboard_html_handles_versioned_intel_envelopes() {
+        let html = include_str!("dashboard.html");
+        assert!(html.contains("envelopeData("));
+        assert!(html.contains("Confidence is heuristic"));
+    }
+
+    #[tokio::test]
     async fn dashboard_html_includes_session_graph_section() {
         let html = include_str!("dashboard.html");
         assert!(html.contains("id=\"session-graph\""));
