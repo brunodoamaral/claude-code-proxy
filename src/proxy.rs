@@ -211,6 +211,7 @@ async fn proxy_handler(
             let mut total_bytes = 0u64;
             let mut stalls = Vec::new();
             let mut usage_data = UsageData::default();
+            let mut stop_reason = None;
             let mut response_buffer = Vec::new();
 
             while let Some(chunk_result) = stream.next().await {
@@ -230,8 +231,8 @@ async fn proxy_handler(
                         last_chunk_time = now;
                         total_bytes += chunk.len() as u64;
 
-                        // Extract usage from SSE data
-                        extract_sse_usage(&chunk, &mut usage_data);
+                        // Extract usage and metadata from SSE data
+                        extract_sse_usage_and_metadata(&chunk, &mut usage_data, &mut stop_reason);
 
                         response_buffer.extend_from_slice(&chunk);
                         if tx.send(Ok(chunk)).await.is_err() {
@@ -256,6 +257,9 @@ async fn proxy_handler(
             final_entry.output_tokens = usage_data.output_tokens;
             final_entry.cache_read_tokens = usage_data.cache_read_tokens;
             final_entry.cache_creation_tokens = usage_data.cache_creation_tokens;
+            final_entry.thinking_tokens = usage_data.thinking_tokens;
+
+            let _ = stop_reason;
 
             if !final_entry.stalls.is_empty() {
                 let total_stall: f64 = final_entry.stalls.iter().map(|s| s.duration_s).sum();
@@ -353,16 +357,21 @@ struct UsageData {
     output_tokens: Option<u64>,
     cache_read_tokens: Option<u64>,
     cache_creation_tokens: Option<u64>,
+    thinking_tokens: Option<u64>,
 }
 
-fn extract_sse_usage(chunk: &[u8], usage: &mut UsageData) {
+fn extract_sse_usage_and_metadata(
+    chunk: &[u8],
+    usage: &mut UsageData,
+    stop_reason: &mut Option<String>,
+) {
     let text = match std::str::from_utf8(chunk) {
         Ok(t) => t,
         Err(_) => return,
     };
 
     for line in text.lines() {
-        if !line.starts_with("data: ") || !line.contains("usage") {
+        if !line.starts_with("data: ") {
             continue;
         }
 
@@ -380,6 +389,13 @@ fn extract_sse_usage(chunk: &[u8], usage: &mut UsageData) {
                 if let Some(v) = u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()) {
                     usage.cache_creation_tokens = Some(v);
                 }
+                if let Some(v) = u.get("thinking_tokens").and_then(|v| v.as_u64()) {
+                    usage.thinking_tokens = Some(v);
+                }
+            }
+
+            if let Some(reason) = data.get("stop_reason").and_then(|v| v.as_str()) {
+                *stop_reason = Some(reason.to_string());
             }
         }
     }
@@ -523,6 +539,18 @@ mod tests {
         let summary = summarize_error_body(&headers, b"{\n  \"error\": \"forbidden\"\n}\n");
 
         assert_eq!(summary, "{ \"error\": \"forbidden\" }");
+    }
+
+    #[test]
+    fn extract_sse_usage_captures_thinking_tokens_and_stop_reason() {
+        let chunk = b"data: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{\"input_tokens\":10,\"output_tokens\":20,\"cache_read_input_tokens\":5,\"cache_creation_input_tokens\":2,\"thinking_tokens\":7},\"stop_reason\":\"end_turn\"}\n\n";
+
+        let mut usage = UsageData::default();
+        let mut stop_reason = None;
+        extract_sse_usage_and_metadata(chunk, &mut usage, &mut stop_reason);
+
+        assert_eq!(usage.thinking_tokens, Some(7));
+        assert_eq!(stop_reason.as_deref(), Some("end_turn"));
     }
 }
 
