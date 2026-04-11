@@ -1,11 +1,9 @@
-#[cfg(any())]
 mod analyzer;
 mod correlation;
 mod correlation_engine;
 mod dashboard;
 mod explainer;
 mod local_context;
-#[cfg(any())]
 mod model_profile;
 mod proxy;
 mod session_admin;
@@ -55,7 +53,14 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
-    let _ = &args.model_config;
+
+    if let Some(model_config_path) = &args.model_config {
+        eprintln!(
+            "--model-config is not wired in this phase yet: {}",
+            model_config_path.display()
+        );
+        std::process::exit(2);
+    }
 
     let target = args.target.trim_end_matches('/').to_string();
     let data_dir = args.data_dir.unwrap_or_else(|| {
@@ -72,7 +77,7 @@ async fn main() {
         50_000,
         data_dir.clone(),
         args.stall_threshold,
-        args.slow_ttft_threshold as f64,
+        (args.slow_ttft_threshold as f64) / 1000.0,
         args.max_body_size,
         claude_root,
     ));
