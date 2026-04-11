@@ -13,6 +13,20 @@ pub enum RequestStatusKind {
     ProxyError,
 }
 
+impl RequestStatusKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Success => "success",
+            Self::ClientError => "client_error",
+            Self::ServerError => "server_error",
+            Self::Timeout => "timeout",
+            Self::ConnectionError => "connection_error",
+            Self::ProxyError => "proxy_error",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {

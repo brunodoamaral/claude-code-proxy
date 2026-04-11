@@ -1,5 +1,6 @@
+use crate::types::{RequestRecord, RequestStatusKind};
 use parking_lot::Mutex;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -146,11 +147,88 @@ impl Store {
         }
         Ok(out)
     }
+
+    pub fn add_request(&self, req: &RequestRecord) -> Result<(), rusqlite::Error> {
+        let db = self.db.lock();
+        db.execute(
+            r#"INSERT INTO requests (
+                id, session_id, timestamp_ms, method, path, model, stream, status_code, status_kind,
+                ttft_ms, duration_ms, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                thinking_tokens, request_size_bytes, response_size_bytes, stall_count, stall_details_json,
+                error_summary, stop_reason, content_block_types_json, anomalies_json, analyzed
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)"#,
+            params![
+                req.id,
+                req.session_id,
+                req.timestamp.timestamp_millis(),
+                req.method,
+                req.path,
+                req.model,
+                req.stream as i64,
+                req.status_code,
+                req.status_kind.as_str(),
+                req.ttft_ms,
+                req.duration_ms,
+                req.input_tokens,
+                req.output_tokens,
+                req.cache_read_tokens,
+                req.cache_creation_tokens,
+                req.thinking_tokens,
+                req.request_size_bytes as i64,
+                req.response_size_bytes as i64,
+                req.stall_count as i64,
+                req.stall_details_json,
+                req.error_summary,
+                req.stop_reason,
+                req.content_block_types_json,
+                req.anomalies_json,
+                req.analyzed as i64,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn write_bodies(
+        &self,
+        request_id: &str,
+        request_body: &str,
+        response_body: &str,
+        truncated: bool,
+    ) -> Result<(), rusqlite::Error> {
+        let db = self.db.lock();
+        db.execute(
+            "INSERT OR REPLACE INTO request_bodies (request_id, request_body, response_body, truncated) VALUES (?1, ?2, ?3, ?4)",
+            params![request_id, request_body, response_body, truncated as i64],
+        )?;
+        Ok(())
+    }
+
+    pub fn search_request_ids(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<String>, rusqlite::Error> {
+        let db = self.db.lock();
+        let mut stmt = db.prepare(
+            "SELECT request_id FROM request_bodies_fts WHERE request_bodies_fts MATCH ?1 ORDER BY rank LIMIT ?2 OFFSET ?3",
+        )?;
+        let rows = stmt.query_map(params![query, limit as i64, offset as i64], |row| {
+            row.get::<_, String>(0)
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{RequestRecord, RequestStatusKind};
+    use chrono::Utc;
     use rusqlite::params;
 
     fn create_store() -> Store {
@@ -274,5 +352,54 @@ mod tests {
                 .unwrap();
             assert_eq!(exists, 1, "expected index {index} to exist");
         }
+    }
+
+    fn sample_request(id: &str, model: &str) -> RequestRecord {
+        RequestRecord {
+            id: id.to_string(),
+            session_id: Some("session-1".to_string()),
+            timestamp: Utc::now(),
+            method: "POST".to_string(),
+            path: "/v1/messages".to_string(),
+            model: model.to_string(),
+            stream: true,
+            status_code: Some(200),
+            status_kind: RequestStatusKind::Success,
+            ttft_ms: Some(120.0),
+            duration_ms: Some(450.0),
+            input_tokens: Some(100),
+            output_tokens: Some(250),
+            cache_read_tokens: Some(20),
+            cache_creation_tokens: Some(10),
+            thinking_tokens: Some(5),
+            request_size_bytes: 2048,
+            response_size_bytes: 4096,
+            stall_count: 0,
+            stall_details_json: "[]".to_string(),
+            error_summary: None,
+            stop_reason: Some("end_turn".to_string()),
+            content_block_types_json: "[\"text\"]".to_string(),
+            anomalies_json: "[]".to_string(),
+            analyzed: false,
+        }
+    }
+
+    #[test]
+    fn add_request_and_search_by_fts() {
+        let store = create_store();
+
+        let request = sample_request("req-1", "claude-opus-4-1");
+        store.add_request(&request).unwrap();
+        store
+            .write_bodies(
+                "req-1",
+                "{\"input\":\"latency issue\"}",
+                "{\"output\":\"observed stall\"}",
+                false,
+            )
+            .unwrap();
+
+        let ids = store.search_request_ids("stall", 10, 0).unwrap();
+        assert_eq!(ids, vec!["req-1".to_string()]);
     }
 }
