@@ -145,6 +145,11 @@ Claude Code  →  Proxy (:8000)  →  Anthropic API
 
 Single Rust binary. No Node.js. No npm. No build step beyond `cargo build`.
 
+Dashboard is a vanilla JS SPA (Chart.js for charts, WebSocket for real-time updates) assembled
+at compile time from 11 focused files under `src/dashboard/` via Rust's `format!()` + `include_str!()`.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full details.
+
 ## License
 
 Private — all rights reserved.

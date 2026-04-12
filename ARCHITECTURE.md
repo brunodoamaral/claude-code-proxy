@@ -1,6 +1,6 @@
 # ClaudeProxy: Architecture Document
 
-**Version:** 2.0
+**Version:** 2.1
 **Date:** April 2026
 **Language:** Rust (Edition 2021)
 
@@ -69,16 +69,18 @@ tool_usage: id, request_id, tool_name, tool_input_json
 
 ## Dashboard Architecture
 
-Single-page app assembled at compile time from `src/dashboard/` files:
+Single-page app assembled at compile time from `src/dashboard/` files.
+
+### File Structure
 
 ```
 src/dashboard/
-├── shell.html              # HTML skeleton with {placeholders}
-├── styles.css              # All CSS
+├── shell.html              # HTML skeleton with {placeholders} for format!()
+├── styles.css              # All CSS (normal braces — not a format! template)
 ├── app.js                  # DOMContentLoaded wiring, settings editor
 ├── utils.js                # Shared helpers: fmt, esc, formatDuration, etc.
 ├── components/
-│   ├── charts.js           # Chart.js lifecycle management
+│   ├── charts.js           # Chart.js lifecycle + chartDefaults config
 │   └── websocket.js        # WebSocket connection + reconnect
 └── tabs/
     ├── overview.js          # Stat cards, timeseries, breakdowns
@@ -86,12 +88,60 @@ src/dashboard/
     ├── conformance.js       # Model scoreboard (placeholder)
     ├── anomalies.js         # Anomaly list with severity badges
     └── sessions.js          # Split layout, timeline, conversation
-
-Assembly: dashboard.rs → format!(shell.html, css=styles.css, app_js=app.js, ...)
-Result: Single HTML response served at GET /
 ```
 
+### Assembly
+
+`dashboard.rs` calls `assemble_dashboard_html()` which uses Rust's `format!()` macro
+with `include_str!()` to inline all 10 files into a single HTML response at compile time:
+
+```rust
+format!(include_str!("dashboard/shell.html"),
+    css          = include_str!("dashboard/styles.css"),
+    utils_js     = include_str!("dashboard/utils.js"),
+    charts_js    = include_str!("dashboard/components/charts.js"),
+    websocket_js = include_str!("dashboard/components/websocket.js"),
+    overview_js  = include_str!("dashboard/tabs/overview.js"),
+    requests_js  = include_str!("dashboard/tabs/requests.js"),
+    conformance_js = include_str!("dashboard/tabs/conformance.js"),
+    anomalies_js = include_str!("dashboard/tabs/anomalies.js"),
+    sessions_js  = include_str!("dashboard/tabs/sessions.js"),
+    app_js       = include_str!("dashboard/app.js"),
+)
+```
+
+**Key detail:** `format!()` only interprets `{name}` placeholders in the template string
+(shell.html). Named arguments (CSS/JS files) are substituted verbatim — their braces are
+NOT interpreted. Only shell.html needs `{{`/`}}` for literal braces.
+
+Result: Single HTML response served at `GET /`.
+
+### Dashboard File Sizes
+
+| File | Lines | Role |
+|------|-------|------|
+| `tabs/requests.js` | 791 | Request table, filters, modal, correlations |
+| `tabs/sessions.js` | 456 | Session explorer, timeline, conversation |
+| `app.js` | 458 | Init wiring, settings editor, tab switching |
+| `styles.css` | 375 | All CSS styles |
+| `shell.html` | 294 | HTML skeleton |
+| `tabs/overview.js` | 247 | Stat cards, charts, breakdowns |
+| `utils.js` | 147 | Shared helpers and constants |
+| `components/charts.js` | 74 | Chart.js wrappers |
+| `components/websocket.js` | 41 | WebSocket connection |
+| `tabs/conformance.js` | 2 | Conformance placeholder |
+| `tabs/anomalies.js` | 1 | Anomaly constant |
+| **Total** | **2,886** | |
+
+### Tabs
+
 5 tabs: Overview, Requests, Model Conformance, Anomalies, Sessions
+
+### Frontend Stack
+
+- **Vanilla JS** — no framework (no React, no Vue, no Alpine.js)
+- **Chart.js 4** (CDN) — TTFT and error timeseries charts
+- **WebSocket** — real-time stats streaming from `/ws`
 
 ---
 
@@ -99,8 +149,8 @@ Result: Single HTML response served at GET /
 
 | Module | Lines | Responsibility |
 |--------|-------|---------------|
-| `stats.rs` | ~7,300 | Stats store, live stats, session aggregation, DB schema |
-| `dashboard.rs` | ~2,000 | Axum routes, REST API, WebSocket, HTML assembly |
+| `stats.rs` | ~7,350 | Stats store, live stats, session aggregation, DB schema |
+| `dashboard.rs` | ~2,230 | Axum routes, REST API, WebSocket, HTML assembly |
 | `store.rs` | ~870 | V2 SQLite store, FTS5, CRUD |
 | `proxy.rs` | ~690 | HTTP proxy, SSE streaming, request forwarding |
 | `model_profile.rs` | ~410 | Model config, behavior class resolution, auto-tune |
@@ -132,12 +182,26 @@ RequestEntry captures:
 
 ---
 
+## Build
+
+### Windows
+```
+build.bat          # → target\release\claude-proxy.exe
+```
+
+### Cross-platform
+```
+cargo build --release
+```
+
+Release profile: LTO enabled, single codegen unit, symbols stripped.
+
+---
+
 ## Dependencies
 
 Runtime: tokio, axum, hyper, reqwest (proxy), rusqlite (SQLite)
 Serialization: serde, serde_json, chrono
 CLI: clap, uuid, dirs, parking_lot
 Streaming: futures-util, tokio-stream
-Frontend: Alpine.js (CDN), Chart.js (CDN)
-
-Release: LTO enabled, single codegen unit, symbols stripped
+Frontend: Chart.js (CDN)
