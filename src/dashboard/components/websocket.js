@@ -22,6 +22,7 @@ function connectWS() {
         if (currentOverviewMode === 'live') {
           statsSnapshot = msg.data;
           updateOverview();
+          if (typeof renderAnomalies === 'function') renderAnomalies();
         }
       } else if (msg.type === 'reset') {
         handleReset(msg.data);
