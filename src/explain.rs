@@ -84,24 +84,43 @@ pub fn generate_explanations(
     explanations
 }
 
-fn build_evidence(req: &RequestRecord, kind: &AnomalyKind, recent: &[RequestRecord]) -> serde_json::Value {
+fn build_evidence(
+    req: &RequestRecord,
+    kind: &AnomalyKind,
+    recent: &[RequestRecord],
+) -> serde_json::Value {
     let mut ev = serde_json::Map::new();
     ev.insert("model".to_string(), serde_json::json!(req.model));
 
     match kind {
         AnomalyKind::SlowTtft => {
             ev.insert("ttft_ms".to_string(), serde_json::json!(req.ttft_ms));
-            ev.insert("avg_ttft_ms".to_string(), serde_json::json!(compute_avg_ttft(recent)));
+            ev.insert(
+                "avg_ttft_ms".to_string(),
+                serde_json::json!(compute_avg_ttft(recent)),
+            );
         }
         AnomalyKind::HighTokens => {
-            ev.insert("output_tokens".to_string(), serde_json::json!(req.output_tokens));
-            ev.insert("avg_output_tokens".to_string(), serde_json::json!(compute_avg_output_tokens(recent)));
+            ev.insert(
+                "output_tokens".to_string(),
+                serde_json::json!(req.output_tokens),
+            );
+            ev.insert(
+                "avg_output_tokens".to_string(),
+                serde_json::json!(compute_avg_output_tokens(recent)),
+            );
         }
         AnomalyKind::Stall => {
-            ev.insert("stall_count".to_string(), serde_json::json!(req.stall_count));
+            ev.insert(
+                "stall_count".to_string(),
+                serde_json::json!(req.stall_count),
+            );
         }
         _ => {
-            ev.insert("status_code".to_string(), serde_json::json!(req.status_code));
+            ev.insert(
+                "status_code".to_string(),
+                serde_json::json!(req.status_code),
+            );
             if let Some(ref err) = req.error_summary {
                 ev.insert("error".to_string(), serde_json::json!(err));
             }
@@ -113,19 +132,28 @@ fn build_evidence(req: &RequestRecord, kind: &AnomalyKind, recent: &[RequestReco
 
 fn compute_avg_ttft(recent: &[RequestRecord]) -> f64 {
     let vals: Vec<f64> = recent.iter().filter_map(|r| r.ttft_ms).collect();
-    if vals.is_empty() { return 0.0; }
+    if vals.is_empty() {
+        return 0.0;
+    }
     vals.iter().sum::<f64>() / vals.len() as f64
 }
 
 fn compute_avg_output_tokens(recent: &[RequestRecord]) -> f64 {
     let vals: Vec<u64> = recent.iter().filter_map(|r| r.output_tokens).collect();
-    if vals.is_empty() { return 0.0; }
+    if vals.is_empty() {
+        return 0.0;
+    }
     vals.iter().sum::<u64>() as f64 / vals.len() as f64
 }
 
 fn compute_cache_hit_pct(recent: &[RequestRecord]) -> f64 {
-    if recent.is_empty() { return 0.0; }
-    let with_cache = recent.iter().filter(|r| r.cache_read_tokens.unwrap_or(0) > 0).count();
+    if recent.is_empty() {
+        return 0.0;
+    }
+    let with_cache = recent
+        .iter()
+        .filter(|r| r.cache_read_tokens.unwrap_or(0) > 0)
+        .count();
     with_cache as f64 / recent.len() as f64 * 100.0
 }
 
@@ -145,25 +173,41 @@ mod tests {
 
     fn sample_request() -> RequestRecord {
         RequestRecord {
-            id: "test-1".to_string(), session_id: None, timestamp: chrono::Utc::now(),
-            method: "POST".to_string(), path: "/v1/messages".to_string(),
-            model: "claude-opus-4-1".to_string(), stream: true,
-            status_code: Some(200), status_kind: RequestStatusKind::Success,
-            ttft_ms: Some(4200.0), duration_ms: Some(3000.0),
-            input_tokens: Some(100), output_tokens: Some(200),
-            cache_read_tokens: Some(50), cache_creation_tokens: None, thinking_tokens: None,
-            request_size_bytes: 1024, response_size_bytes: 2048,
-            stall_count: 0, stall_details_json: "[]".to_string(),
-            error_summary: None, stop_reason: Some("end_turn".to_string()),
+            id: "test-1".to_string(),
+            session_id: None,
+            timestamp: chrono::Utc::now(),
+            method: "POST".to_string(),
+            path: "/v1/messages".to_string(),
+            model: "claude-opus-4-1".to_string(),
+            stream: true,
+            status_code: Some(200),
+            status_kind: RequestStatusKind::Success,
+            ttft_ms: Some(4200.0),
+            duration_ms: Some(3000.0),
+            input_tokens: Some(100),
+            output_tokens: Some(200),
+            cache_read_tokens: Some(50),
+            cache_creation_tokens: None,
+            thinking_tokens: None,
+            request_size_bytes: 1024,
+            response_size_bytes: 2048,
+            stall_count: 0,
+            stall_details_json: "[]".to_string(),
+            error_summary: None,
+            stop_reason: Some("end_turn".to_string()),
             content_block_types_json: "[]".to_string(),
-            anomalies_json: "[]".to_string(), analyzed: false,
+            anomalies_json: "[]".to_string(),
+            analyzed: false,
         }
     }
 
     #[test]
     fn generates_explanation_for_each_anomaly() {
         let req = sample_request();
-        let anomalies = vec![sample_anomaly(AnomalyKind::SlowTtft), sample_anomaly(AnomalyKind::Stall)];
+        let anomalies = vec![
+            sample_anomaly(AnomalyKind::SlowTtft),
+            sample_anomaly(AnomalyKind::Stall),
+        ];
         let explanations = generate_explanations(&req, &anomalies, &[]);
         assert_eq!(explanations.len(), 2);
         assert_eq!(explanations[0].rank, 1);

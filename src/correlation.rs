@@ -162,7 +162,12 @@ mod tests {
     fn temporal_match_within_5s() {
         let req = sample_request();
         let req_ms = req.timestamp.timestamp_millis();
-        let events = vec![("evt-1".to_string(), req_ms + 2000, None, "tool_use".to_string())];
+        let events = vec![(
+            "evt-1".to_string(),
+            req_ms + 2000,
+            None,
+            "tool_use".to_string(),
+        )];
         let links = find_correlations(&req, &events);
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].link_type, "temporal");
@@ -173,7 +178,12 @@ mod tests {
     fn no_match_beyond_5s() {
         let req = sample_request();
         let req_ms = req.timestamp.timestamp_millis();
-        let events = vec![("evt-1".to_string(), req_ms + 10000, None, "tool_use".to_string())];
+        let events = vec![(
+            "evt-1".to_string(),
+            req_ms + 10000,
+            None,
+            "tool_use".to_string(),
+        )];
         let links = find_correlations(&req, &events);
         assert!(links.is_empty());
     }

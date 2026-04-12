@@ -72,7 +72,10 @@ pub fn detect_anomalies(
                     kind: AnomalyKind::Overload,
                     severity: Severity::Error,
                     summary: "API overloaded (529)".to_string(),
-                    hypothesis: Some("The API is temporarily overloaded. Retry with exponential backoff.".to_string()),
+                    hypothesis: Some(
+                        "The API is temporarily overloaded. Retry with exponential backoff."
+                            .to_string(),
+                    ),
                 });
             }
             500..=599 => {
@@ -80,7 +83,10 @@ pub fn detect_anomalies(
                     kind: AnomalyKind::ApiError,
                     severity: Severity::Error,
                     summary: format!("API server error ({})", status),
-                    hypothesis: Some(format!("Server returned {}. This is an upstream issue.", status)),
+                    hypothesis: Some(format!(
+                        "Server returned {}. This is an upstream issue.",
+                        status
+                    )),
                 });
             }
             400..=499 => {
@@ -293,7 +299,9 @@ mod tests {
         let mut req = sample_request();
         req.stop_reason = Some("max_tokens".to_string());
         let anomalies = detect_anomalies(&req, &default_rules(), &[]);
-        assert!(anomalies.iter().any(|a| a.kind == AnomalyKind::MaxTokensHit));
+        assert!(anomalies
+            .iter()
+            .any(|a| a.kind == AnomalyKind::MaxTokensHit));
     }
 
     #[test]
@@ -303,7 +311,9 @@ mod tests {
         req.stop_reason = None;
         req.error_summary = Some("connection reset".to_string());
         let anomalies = detect_anomalies(&req, &default_rules(), &[]);
-        assert!(anomalies.iter().any(|a| a.kind == AnomalyKind::InterruptedStream));
+        assert!(anomalies
+            .iter()
+            .any(|a| a.kind == AnomalyKind::InterruptedStream));
     }
 
     #[test]
@@ -364,6 +374,10 @@ mod tests {
     fn healthy_request_produces_no_anomalies() {
         let req = sample_request();
         let anomalies = detect_anomalies(&req, &default_rules(), &[]);
-        assert!(anomalies.is_empty(), "Expected no anomalies, got: {:?}", anomalies.iter().map(|a| &a.kind).collect::<Vec<_>>());
+        assert!(
+            anomalies.is_empty(),
+            "Expected no anomalies, got: {:?}",
+            anomalies.iter().map(|a| &a.kind).collect::<Vec<_>>()
+        );
     }
 }

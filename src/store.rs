@@ -555,7 +555,10 @@ impl Store {
 
         Ok(())
     }
-    pub fn get_tool_usage_for_request(&self, request_id: &str) -> Result<Vec<serde_json::Value>, rusqlite::Error> {
+    pub fn get_tool_usage_for_request(
+        &self,
+        request_id: &str,
+    ) -> Result<Vec<serde_json::Value>, rusqlite::Error> {
         let db = self.db.lock();
         let mut stmt = db.prepare(
             "SELECT id, tool_name, tool_input_json, success, is_error FROM tool_usage WHERE request_id = ?1"
@@ -572,7 +575,12 @@ impl Store {
         rows.collect()
     }
 
-    pub fn insert_tool_usage(&self, request_id: &str, tool_name: &str, tool_input_json: &str) -> Result<(), rusqlite::Error> {
+    pub fn insert_tool_usage(
+        &self,
+        request_id: &str,
+        tool_name: &str,
+        tool_input_json: &str,
+    ) -> Result<(), rusqlite::Error> {
         let db = self.db.lock();
         let id = uuid::Uuid::new_v4().to_string();
         db.execute(
@@ -582,7 +590,10 @@ impl Store {
         Ok(())
     }
 
-    pub fn get_anomaly_by_id(&self, anomaly_id: &str) -> Result<Option<serde_json::Value>, rusqlite::Error> {
+    pub fn get_anomaly_by_id(
+        &self,
+        anomaly_id: &str,
+    ) -> Result<Option<serde_json::Value>, rusqlite::Error> {
         let db = self.db.lock();
         let mut stmt = db.prepare(
             "SELECT id, request_id, kind, severity, summary, hypothesis, evidence_json, created_at_ms FROM anomalies WHERE id = ?1"
@@ -613,7 +624,7 @@ impl Store {
              AVG(CASE WHEN ttft_ms IS NOT NULL THEN ttft_ms END) as avg_ttft, \
              SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as error_count, \
              MAX(timestamp_ms) as last_seen \
-             FROM requests GROUP BY model ORDER BY count DESC"
+             FROM requests GROUP BY model ORDER BY count DESC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(serde_json::json!({
@@ -627,13 +638,18 @@ impl Store {
         rows.collect()
     }
 
-    pub fn replace_explanations_for_request(&self, request_id: &str, explanations: &[crate::explain::Explanation]) -> Result<(), rusqlite::Error> {
+    pub fn replace_explanations_for_request(
+        &self,
+        request_id: &str,
+        explanations: &[crate::explain::Explanation],
+    ) -> Result<(), rusqlite::Error> {
         let db = self.db.lock();
         for explanation in explanations {
             db.execute(
                 "UPDATE anomalies SET evidence_json = ?1 WHERE request_id = ?2 AND kind = ?3",
                 params![
-                    serde_json::to_string(&explanation.evidence_json).unwrap_or_else(|_| "{}".to_string()),
+                    serde_json::to_string(&explanation.evidence_json)
+                        .unwrap_or_else(|_| "{}".to_string()),
                     request_id,
                     explanation.anomaly_kind.to_lowercase(),
                 ],
@@ -943,7 +959,9 @@ mod tests {
         ).unwrap();
         drop(db);
 
-        store.insert_tool_usage("req-tool", "read_file", r#"{"path":"foo.rs"}"#).unwrap();
+        store
+            .insert_tool_usage("req-tool", "read_file", r#"{"path":"foo.rs"}"#)
+            .unwrap();
         let tools = store.get_tool_usage_for_request("req-tool").unwrap();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0]["tool_name"], "read_file");

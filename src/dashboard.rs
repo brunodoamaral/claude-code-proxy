@@ -18,7 +18,11 @@ struct DashboardState {
     store: Arc<Store>,
 }
 
-pub async fn run_dashboard(stats: Arc<StatsStore>, store: Arc<Store>, port: u16) -> Result<(), String> {
+pub async fn run_dashboard(
+    stats: Arc<StatsStore>,
+    store: Arc<Store>,
+    port: u16,
+) -> Result<(), String> {
     let app = build_dashboard_app(stats, store);
 
     let addr = format!("127.0.0.1:{port}");
@@ -115,7 +119,8 @@ async fn api_request_detail(
     Path(id): Path<String>,
     State(state): State<DashboardState>,
 ) -> impl IntoResponse {
-    let entry = state.stats
+    let entry = state
+        .stats
         .get_entries(
             1000,
             0,
@@ -150,7 +155,10 @@ async fn api_request_body(
     }
 }
 
-async fn api_request_tools(Path(id): Path<String>, State(state): State<DashboardState>) -> impl IntoResponse {
+async fn api_request_tools(
+    Path(id): Path<String>,
+    State(state): State<DashboardState>,
+) -> impl IntoResponse {
     match state.store.get_tool_usage_for_request(&id) {
         Ok(tools) => Json(serde_json::json!(tools)),
         Err(_) => Json(serde_json::json!([])),
@@ -158,7 +166,9 @@ async fn api_request_tools(Path(id): Path<String>, State(state): State<Dashboard
 }
 
 async fn api_models(State(state): State<DashboardState>) -> impl IntoResponse {
-    let entries = state.stats.get_entries(1000, 0, &EntryFilter::default(), None, None);
+    let entries = state
+        .stats
+        .get_entries(1000, 0, &EntryFilter::default(), None, None);
     let mut by_model: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for entry in entries {
         *by_model.entry(entry.model).or_insert(0) += 1;
@@ -166,8 +176,16 @@ async fn api_models(State(state): State<DashboardState>) -> impl IntoResponse {
     Json(serde_json::json!(by_model))
 }
 
-async fn api_model_profile(Path(name): Path<String>, State(state): State<DashboardState>) -> impl IntoResponse {
-    let sample_count = state.store.get_model_profile_sample_count(&name).ok().flatten().unwrap_or(0);
+async fn api_model_profile(
+    Path(name): Path<String>,
+    State(state): State<DashboardState>,
+) -> impl IntoResponse {
+    let sample_count = state
+        .store
+        .get_model_profile_sample_count(&name)
+        .ok()
+        .flatten()
+        .unwrap_or(0);
     let observed = state.store.get_model_profile_observed(&name).ok().flatten();
     Json(serde_json::json!({
         "model": name,
@@ -176,7 +194,10 @@ async fn api_model_profile(Path(name): Path<String>, State(state): State<Dashboa
     }))
 }
 
-async fn api_model_comparison(Path(name): Path<String>, State(state): State<DashboardState>) -> impl IntoResponse {
+async fn api_model_comparison(
+    Path(name): Path<String>,
+    State(state): State<DashboardState>,
+) -> impl IntoResponse {
     let observed = state.store.get_model_profile_observed(&name).ok().flatten();
     Json(serde_json::json!({
         "model": name,
@@ -203,11 +224,22 @@ async fn api_anomalies(State(state): State<DashboardState>) -> impl IntoResponse
     Json(snapshot.stats.recent_anomalies)
 }
 
-async fn api_anomaly_detail(Path(id): Path<String>, State(state): State<DashboardState>) -> impl IntoResponse {
+async fn api_anomaly_detail(
+    Path(id): Path<String>,
+    State(state): State<DashboardState>,
+) -> impl IntoResponse {
     match state.store.get_anomaly_by_id(&id) {
         Ok(Some(anomaly)) => (StatusCode::OK, Json(anomaly)).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("anomaly {id} not found")}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": format!("anomaly {id} not found")})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 
@@ -314,8 +346,13 @@ async fn api_entries(
             .unwrap_or(120_000)
             .clamp(1_000, 3_600_000);
 
-        let focused =
-            state.stats.get_entries_with_anomaly_focus(limit, offset, &filter, anomaly_ts_ms, window_ms);
+        let focused = state.stats.get_entries_with_anomaly_focus(
+            limit,
+            offset,
+            &filter,
+            anomaly_ts_ms,
+            window_ms,
+        );
         let within_window_count = focused.entries.len();
 
         return axum::Json(EntriesResponse {
@@ -416,7 +453,9 @@ async fn api_correlations(
     State(state): State<DashboardState>,
     Query(q): Query<CorrelationsQuery>,
 ) -> impl IntoResponse {
-    let links = state.stats.get_correlations_for_request(&q.request_id, q.limit.unwrap_or(50));
+    let links = state
+        .stats
+        .get_correlations_for_request(&q.request_id, q.limit.unwrap_or(50));
     axum::Json(versioned(links))
 }
 
@@ -424,7 +463,9 @@ async fn api_explanations(
     State(state): State<DashboardState>,
     Query(q): Query<ExplanationsQuery>,
 ) -> impl IntoResponse {
-    let rows = state.stats.get_explanations_for_request(&q.request_id, q.limit.unwrap_or(10));
+    let rows = state
+        .stats
+        .get_explanations_for_request(&q.request_id, q.limit.unwrap_or(10));
     axum::Json(versioned(rows))
 }
 
@@ -434,7 +475,8 @@ async fn api_timeline(
 ) -> impl IntoResponse {
     let cap = q.limit.unwrap_or(200).min(1000);
 
-    let mut request_items: Vec<TimelineItem> = state.stats
+    let mut request_items: Vec<TimelineItem> = state
+        .stats
         .get_entries(
             cap,
             0,
@@ -462,7 +504,8 @@ async fn api_timeline(
         })
         .collect();
 
-    let mut event_items: Vec<TimelineItem> = state.stats
+    let mut event_items: Vec<TimelineItem> = state
+        .stats
         .get_local_events(Some(&q.session_id), cap)
         .into_iter()
         .filter_map(|event| {
@@ -496,7 +539,8 @@ async fn api_session_graph(
     Query(q): Query<SessionGraphQuery>,
 ) -> impl IntoResponse {
     let limit = q.limit.unwrap_or(200).min(1000);
-    let graph = state.stats
+    let graph = state
+        .stats
         .get_session_graph(&q.session_id, limit)
         .unwrap_or(SessionGraph {
             session_id: q.session_id,

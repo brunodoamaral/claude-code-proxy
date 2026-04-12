@@ -14,7 +14,12 @@ use futures_util::StreamExt;
 use std::sync::Arc;
 use std::time::Instant;
 
-pub async fn run_proxy(store: Arc<StatsStore>, v2_store: Option<Arc<crate::store::Store>>, target: &str, port: u16) -> Result<(), String> {
+pub async fn run_proxy(
+    store: Arc<StatsStore>,
+    v2_store: Option<Arc<crate::store::Store>>,
+    target: &str,
+    port: u16,
+) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(600))
         .connect_timeout(std::time::Duration::from_secs(30))
@@ -456,7 +461,12 @@ fn process_sse_text_chunk_with_stats(
     }
 }
 
-fn process_sse_line(line: &str, usage: &mut UsageData, stop_reason: &mut Option<String>, tool_uses: &mut Vec<(String, String)>) {
+fn process_sse_line(
+    line: &str,
+    usage: &mut UsageData,
+    stop_reason: &mut Option<String>,
+    tool_uses: &mut Vec<(String, String)>,
+) {
     if !line.starts_with("data: ") {
         return;
     }
@@ -492,8 +502,15 @@ fn process_sse_line(line: &str, usage: &mut UsageData, stop_reason: &mut Option<
             if event_type == "content_block_start" {
                 if let Some(cb) = data.get("content_block") {
                     if cb.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                        let name = cb.get("name").and_then(|n| n.as_str()).unwrap_or("unknown").to_string();
-                        let input = cb.get("input").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+                        let name = cb
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        let input = cb
+                            .get("input")
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "{}".to_string());
                         tool_uses.push((name, input));
                     }
                 }
@@ -652,7 +669,13 @@ mod tests {
         let mut usage = UsageData::default();
         let mut stop_reason = None;
         let mut line_buffer = String::new();
-        extract_sse_usage_and_metadata(chunk, &mut line_buffer, &mut usage, &mut stop_reason, &mut Vec::new());
+        extract_sse_usage_and_metadata(
+            chunk,
+            &mut line_buffer,
+            &mut usage,
+            &mut stop_reason,
+            &mut Vec::new(),
+        );
 
         assert_eq!(usage.thinking_tokens, Some(7));
         assert_eq!(stop_reason.as_deref(), Some("end_turn"));
@@ -667,11 +690,23 @@ mod tests {
         let mut stop_reason = None;
         let mut line_buffer = String::new();
 
-        extract_sse_usage_and_metadata(chunk1, &mut line_buffer, &mut usage, &mut stop_reason, &mut Vec::new());
+        extract_sse_usage_and_metadata(
+            chunk1,
+            &mut line_buffer,
+            &mut usage,
+            &mut stop_reason,
+            &mut Vec::new(),
+        );
         assert_eq!(usage.thinking_tokens, None);
         assert_eq!(stop_reason, None);
 
-        extract_sse_usage_and_metadata(chunk2, &mut line_buffer, &mut usage, &mut stop_reason, &mut Vec::new());
+        extract_sse_usage_and_metadata(
+            chunk2,
+            &mut line_buffer,
+            &mut usage,
+            &mut stop_reason,
+            &mut Vec::new(),
+        );
         assert_eq!(usage.thinking_tokens, Some(9));
         assert_eq!(stop_reason.as_deref(), Some("end_turn"));
     }
@@ -725,7 +760,13 @@ mod tests {
         let mut line_buffer = String::new();
         let mut tool_uses = Vec::new();
 
-        extract_sse_usage_and_metadata(chunk, &mut line_buffer, &mut usage, &mut stop_reason, &mut tool_uses);
+        extract_sse_usage_and_metadata(
+            chunk,
+            &mut line_buffer,
+            &mut usage,
+            &mut stop_reason,
+            &mut tool_uses,
+        );
 
         assert_eq!(tool_uses.len(), 1);
         assert_eq!(tool_uses[0].0, "read_file");
@@ -742,8 +783,20 @@ mod tests {
         let mut line_buffer = String::new();
         let mut tool_uses = Vec::new();
 
-        extract_sse_usage_and_metadata(chunk1, &mut line_buffer, &mut usage, &mut stop_reason, &mut tool_uses);
-        extract_sse_usage_and_metadata(chunk2, &mut line_buffer, &mut usage, &mut stop_reason, &mut tool_uses);
+        extract_sse_usage_and_metadata(
+            chunk1,
+            &mut line_buffer,
+            &mut usage,
+            &mut stop_reason,
+            &mut tool_uses,
+        );
+        extract_sse_usage_and_metadata(
+            chunk2,
+            &mut line_buffer,
+            &mut usage,
+            &mut stop_reason,
+            &mut tool_uses,
+        );
 
         assert_eq!(tool_uses.len(), 2);
         assert_eq!(tool_uses[0].0, "read_file");
@@ -759,7 +812,13 @@ mod tests {
         let mut line_buffer = String::new();
         let mut tool_uses = Vec::new();
 
-        extract_sse_usage_and_metadata(chunk, &mut line_buffer, &mut usage, &mut stop_reason, &mut tool_uses);
+        extract_sse_usage_and_metadata(
+            chunk,
+            &mut line_buffer,
+            &mut usage,
+            &mut stop_reason,
+            &mut tool_uses,
+        );
 
         assert!(tool_uses.is_empty());
     }
