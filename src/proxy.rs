@@ -231,6 +231,7 @@ async fn proxy_handler(
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(256);
 
         // Spawn stream reader
+        let stream_start = start;
         tokio::spawn(async move {
             let mut stream = response.bytes_stream();
             let mut last_chunk_time = Instant::now();
@@ -241,11 +242,20 @@ async fn proxy_handler(
             let mut response_buffer = Vec::new();
             let mut sse_line_buffer = String::new();
             let mut tool_uses: Vec<(String, String)> = Vec::new();
+            let mut first_chunk_received = false;
+            let mut ttft_actual: Option<f64> = None;
 
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(chunk) => {
                         let now = Instant::now();
+
+                        // TTFT = time from request start to first SSE data chunk
+                        if !first_chunk_received {
+                            first_chunk_received = true;
+                            ttft_actual = Some(stream_start.elapsed().as_secs_f64() * 1000.0);
+                        }
+
                         let gap = (now - last_chunk_time).as_secs_f64();
 
                         if gap > stall_threshold {
@@ -286,6 +296,10 @@ async fn proxy_handler(
             final_entry.duration_ms = start.elapsed().as_secs_f64() * 1000.0;
             final_entry.response_size_bytes = total_bytes;
             final_entry.stalls = stalls;
+            // Override TTFT with actual first-chunk time for streaming requests
+            if let Some(ttft) = ttft_actual {
+                final_entry.ttft_ms = Some(ttft);
+            }
             apply_stream_usage_and_metadata(&mut final_entry, &usage_data, stop_reason);
 
             if !final_entry.stalls.is_empty() {
