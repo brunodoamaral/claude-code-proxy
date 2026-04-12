@@ -26,18 +26,34 @@ winget install Rustlang.Rust.MSVC
 ```powershell
 cd claude-proxy
 cargo build --release
+# Or use the build script:
+build.bat
 ```
 
 Binary at `target\release\claude-proxy.exe` (~5MB).
 
 ### 3. Run
 ```powershell
+# Basic — proxy to Anthropic API:
 claude-proxy.exe --target https://api.anthropic.com
+
+# With auto-open dashboard in browser:
+claude-proxy.exe --target https://api.anthropic.com --open-browser
+
+# Custom ports:
+claude-proxy.exe --target https://api.anthropic.com --port 8001 --dashboard-port 3001
 ```
 
 This starts:
-- **Proxy** on `http://127.0.0.1:8000`
-- **Dashboard** on `http://127.0.0.1:3000`
+- **Proxy** on `http://127.0.0.1:8000` (forwards requests to the target API)
+- **Dashboard** on `http://127.0.0.1:3000` (open in browser to monitor)
+
+### RustRover IDE
+
+In **Run/Debug Configurations** → **Cargo**, set the Command field to:
+```
+run --package claude-proxy --bin claude-proxy -- --target https://api.anthropic.com --open-browser
+```
 
 ### 4. Configure Claude Code
 
