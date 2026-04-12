@@ -404,7 +404,6 @@
     <div class="tab" data-tab="conformance">Model Conformance</div>
     <div class="tab" data-tab="anomalies">Anomalies</div>
     <div class="tab" data-tab="sessions">Sessions</div>
-    <div class="tab" data-tab="settings">Settings</div>
   </div>
 
   <!-- ═══ OVERVIEW TAB ═══ -->
@@ -618,8 +617,8 @@
     </div>
   </div>
 
-  <!-- ═══ SETTINGS TAB ═══ -->
-  <div class="tab-content" id="tab-settings">
+  <!-- ═══ SETTINGS EDITOR PANEL (non-tab) ═══ -->
+  <div id="settings-editor-container" style="display:none">
     <div class="card" id="settings-editor-panel">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -1016,9 +1015,6 @@ function setActiveTab(tabName, { persist = true } = {}) {
   if (tab === 'requests') {
     populateSessionFilter();
     updateSortArrows();
-  }
-  if (tab === 'settings') {
-    loadSettingsCurrent();
   }
   if (tab === 'overview') requestAnimationFrame(() => resizeCharts());
 }
@@ -2636,7 +2632,7 @@ function normalizeOverviewMode(mode) {
 }
 
 function normalizeTab(tab) {
-  return ['overview', 'requests', 'conformance', 'anomalies', 'sessions', 'settings'].includes(tab) ? tab : 'overview';
+  return ['overview', 'requests', 'conformance', 'anomalies', 'sessions'].includes(tab) ? tab : 'overview';
 }
 
 function normalizeRequestFilter(filter) {
