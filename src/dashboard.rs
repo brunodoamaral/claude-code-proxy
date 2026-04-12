@@ -69,7 +69,7 @@ fn build_dashboard_app(store: Arc<StatsStore>) -> Router {
 }
 
 async fn serve_dashboard() -> impl IntoResponse {
-    Html(include_str!("dashboard.html"))
+    Html(assemble_dashboard_html())
 }
 
 async fn api_health(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
@@ -690,7 +690,6 @@ async fn ws_connection(mut socket: WebSocket, store: Arc<StatsStore>) {
     }
 }
 
-#[allow(dead_code)] // Used in tests; wired into serve_dashboard() in Task 11
 fn assemble_dashboard_html() -> String {
     format!(
         include_str!("dashboard/shell.html"),
@@ -752,7 +751,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_contains_required_v2_tabs() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("data-tab=\"overview\""));
         assert!(html.contains("data-tab=\"requests\""));
         assert!(html.contains("data-tab=\"conformance\""));
@@ -763,7 +762,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_includes_correlation_panel() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("id=\"correlation-panel\""));
         assert!(html.contains("loadCorrelations("));
         assert!(html.contains("/api/correlations?request_id="));
@@ -773,7 +772,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_includes_explanations_and_timeline_sections() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("id=\"request-explanations\""));
         assert!(html.contains("id=\"session-timeline\""));
         assert!(html.contains("loadExplanations("));
@@ -782,27 +781,27 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_uses_merged_sessions_endpoint() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("/api/sessions/merged"));
     }
 
     #[tokio::test]
     async fn dashboard_html_handles_versioned_intel_envelopes() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("envelopeData("));
         assert!(html.contains("Confidence is heuristic"));
     }
 
     #[tokio::test]
     async fn dashboard_html_no_longer_fetches_split_session_sources() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(!html.contains("fetch('/api/sessions')"));
         assert!(!html.contains("fetch('/api/claude-sessions')"));
     }
 
     #[tokio::test]
     async fn dashboard_html_includes_session_graph_section() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("id=\"session-graph\""));
         assert!(html.contains("id=\"session-graph-list\""));
         assert!(html.contains("loadSessionGraph("));
@@ -811,7 +810,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_load_entries_supports_anomaly_focus_params() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("params.set('anomaly_ts_ms'"));
         assert!(html.contains("params.set('window_ms'"));
         assert!(html.contains("preselectRequestRow("));
@@ -819,7 +818,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_includes_anomaly_focus_controls() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("id=\"anomaly-focus-bar\""));
         assert!(html.contains("id=\"clear-anomaly-focus-btn\""));
         assert!(html.contains("id=\"expand-anomaly-window-btn\""));
@@ -827,7 +826,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_routes_anomaly_click_to_focus_flow() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
 
         assert!(html.contains("function applyAnomalyFocus("));
         assert!(html.contains("function clearAnomalyFocus("));
@@ -846,7 +845,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_session_not_found_clears_all_sections() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("detailsResp.status === 404"));
         assert!(html.contains("Session not found."));
         assert!(html.contains("No timeline data for this session."));
@@ -855,14 +854,14 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_modal_bodies_handles_404_as_empty_state() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("if (resp.status === 404)"));
         assert!(html.contains("No request/response bodies saved for this entry."));
     }
 
     #[tokio::test]
     async fn dashboard_html_includes_expand_anomaly_window_action() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("expandAnomalyWindow("));
         assert!(html
             .contains("expand-anomaly-window-btn').addEventListener('click', expandAnomalyWindow"));
@@ -880,7 +879,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_select_session_caches_conversation_preview_payload() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("const cacheKey = String(sessionId);"));
         assert!(html.contains("const cached = sessionDetails;"));
         assert!(html.contains("setSessionConversationCache(cacheKey, cached);"));
@@ -888,7 +887,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_settings_tab_uses_single_editor_panel() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("id=\"settings-editor-panel\""));
         assert!(!html.contains("id=\"settings-history-panel\""));
         assert!(!html.contains("id=\"settings-history-list\""));
@@ -897,7 +896,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_settings_editor_has_overlay_and_error_banner() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("id=\"settings-highlight\""));
         assert!(html.contains("id=\"settings-line-numbers\""));
         assert!(html.contains("id=\"settings-error-banner\""));
@@ -906,7 +905,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_settings_editor_wires_format_reset_and_apply() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("id=\"settings-format-btn\""));
         assert!(html.contains("id=\"settings-reset-btn\""));
         assert!(html.contains("id=\"settings-apply-btn\""));
@@ -916,7 +915,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_settings_history_endpoints_and_handlers_removed() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(!html.contains("loadSettingsHistory()"));
         assert!(!html.contains("/api/settings/history"));
         assert!(!html.contains("quick_tags"));
@@ -925,7 +924,7 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_settings_mismatch_removed() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         // Mismatch callout and DB snapshot actions should no longer exist
         assert!(!html.contains("id=\"settings-mismatch-callout\""));
         assert!(!html.contains("id=\"settings-keep-disk-btn\""));
@@ -936,13 +935,13 @@ mod tests {
 
     #[tokio::test]
     async fn dashboard_html_search_treats_missing_session_as_unknown() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         assert!(html.contains("e.session_id || 'unknown'"));
     }
 
     #[tokio::test]
     async fn dashboard_html_non_explicit_focus_clears_do_not_restore_snapshot() {
-        let html = include_str!("dashboard.html");
+        let html = super::assemble_dashboard_html();
         let expected = "clearAnomalyFocus({ restoreSnapshot: false, reload: false });";
         assert_eq!(html.matches(expected).count(), 4);
     }
@@ -2019,81 +2018,194 @@ mod tests {
     #[tokio::test]
     async fn assembled_dashboard_contains_utility_functions() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("function fmt("), "utils.js must contain fmt()");
-        assert!(html.contains("function esc("), "utils.js must contain esc()");
-        assert!(html.contains("function formatDuration("), "utils.js must contain formatDuration()");
-        assert!(html.contains("function tryFormatJson("), "utils.js must contain tryFormatJson()");
+        assert!(
+            html.contains("function fmt("),
+            "utils.js must contain fmt()"
+        );
+        assert!(
+            html.contains("function esc("),
+            "utils.js must contain esc()"
+        );
+        assert!(
+            html.contains("function formatDuration("),
+            "utils.js must contain formatDuration()"
+        );
+        assert!(
+            html.contains("function tryFormatJson("),
+            "utils.js must contain tryFormatJson()"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_websocket_logic() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("function connectWS("), "websocket.js must contain connectWS()");
-        assert!(html.contains("ws.onmessage"), "websocket.js must handle onmessage");
+        assert!(
+            html.contains("function connectWS("),
+            "websocket.js must contain connectWS()"
+        );
+        assert!(
+            html.contains("ws.onmessage"),
+            "websocket.js must handle onmessage"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_css_variables() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("--bg-0"), "CSS variables must be present in assembled output");
-        assert!(html.contains("--cyan"), "CSS variables must be present in assembled output");
+        assert!(
+            html.contains("--bg-0"),
+            "CSS variables must be present in assembled output"
+        );
+        assert!(
+            html.contains("--cyan"),
+            "CSS variables must be present in assembled output"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_chart_functions() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("function initCharts("), "charts.js must contain initCharts()");
-        assert!(html.contains("function updateCharts("), "charts.js must contain updateCharts()");
-        assert!(html.contains("function resetCharts("), "charts.js must contain resetCharts()");
+        assert!(
+            html.contains("function initCharts("),
+            "charts.js must contain initCharts()"
+        );
+        assert!(
+            html.contains("function updateCharts("),
+            "charts.js must contain updateCharts()"
+        );
+        assert!(
+            html.contains("function resetCharts("),
+            "charts.js must contain resetCharts()"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_overview_tab() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("function loadOverview("), "overview.js must contain loadOverview()");
-        assert!(html.contains("function updateOverview("), "overview.js must contain updateOverview()");
-        assert!(html.contains("id=\"tab-overview\""), "shell.html must contain overview tab panel");
-        assert!(html.contains("id=\"health-score\""), "shell.html must contain health score card");
+        assert!(
+            html.contains("function loadOverview("),
+            "overview.js must contain loadOverview()"
+        );
+        assert!(
+            html.contains("function updateOverview("),
+            "overview.js must contain updateOverview()"
+        );
+        assert!(
+            html.contains("id=\"tab-overview\""),
+            "shell.html must contain overview tab panel"
+        );
+        assert!(
+            html.contains("id=\"health-score\""),
+            "shell.html must contain health score card"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_requests_tab() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("function loadEntries("), "requests.js must contain loadEntries()");
-        assert!(html.contains("function addTableRow("), "requests.js must contain addTableRow()");
-        assert!(html.contains("function selectRequest("), "requests.js must contain selectRequest()");
-        assert!(html.contains("id=\"tab-requests\""), "shell.html must contain requests tab panel");
-        assert!(html.contains("id=\"request-table\""), "shell.html must contain request table");
+        assert!(
+            html.contains("function loadEntries("),
+            "requests.js must contain loadEntries()"
+        );
+        assert!(
+            html.contains("function addTableRow("),
+            "requests.js must contain addTableRow()"
+        );
+        assert!(
+            html.contains("function selectRequest("),
+            "requests.js must contain selectRequest()"
+        );
+        assert!(
+            html.contains("id=\"tab-requests\""),
+            "shell.html must contain requests tab panel"
+        );
+        assert!(
+            html.contains("id=\"request-table\""),
+            "shell.html must contain request table"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_conformance_tab() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("id=\"tab-conformance\""), "shell.html must contain conformance tab panel");
-        assert!(html.contains("id=\"conformance-scoreboard\""), "shell.html must contain scoreboard");
+        assert!(
+            html.contains("id=\"tab-conformance\""),
+            "shell.html must contain conformance tab panel"
+        );
+        assert!(
+            html.contains("id=\"conformance-scoreboard\""),
+            "shell.html must contain scoreboard"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_anomalies_tab() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("id=\"tab-anomalies\""), "shell.html must contain anomalies tab panel");
-        assert!(html.contains("id=\"anomaly-list\""), "shell.html must contain anomaly list");
+        assert!(
+            html.contains("id=\"tab-anomalies\""),
+            "shell.html must contain anomalies tab panel"
+        );
+        assert!(
+            html.contains("id=\"anomaly-list\""),
+            "shell.html must contain anomaly list"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_sessions_tab() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("function loadSessions("), "sessions.js must contain loadSessions()");
-        assert!(html.contains("function selectSession("), "sessions.js must contain selectSession()");
-        assert!(html.contains("id=\"tab-sessions\""), "shell.html must contain sessions tab panel");
-        assert!(html.contains("id=\"session-list\""), "shell.html must contain session list");
+        assert!(
+            html.contains("function loadSessions("),
+            "sessions.js must contain loadSessions()"
+        );
+        assert!(
+            html.contains("function selectSession("),
+            "sessions.js must contain selectSession()"
+        );
+        assert!(
+            html.contains("id=\"tab-sessions\""),
+            "shell.html must contain sessions tab panel"
+        );
+        assert!(
+            html.contains("id=\"session-list\""),
+            "shell.html must contain session list"
+        );
     }
 
     #[tokio::test]
     async fn assembled_dashboard_contains_app_initialization() {
         let html = super::assemble_dashboard_html();
-        assert!(html.contains("DOMContentLoaded"), "app.js must wire DOMContentLoaded");
+        assert!(
+            html.contains("DOMContentLoaded"),
+            "app.js must wire DOMContentLoaded"
+        );
         assert!(html.contains("connectWS()"), "app.js must call connectWS()");
-        assert!(html.contains("initCharts()"), "app.js must call initCharts()");
+        assert!(
+            html.contains("initCharts()"),
+            "app.js must call initCharts()"
+        );
+    }
+
+    #[tokio::test]
+    async fn assembled_dashboard_preserves_v2_tab_markers() {
+        let html = super::assemble_dashboard_html();
+        for tab in &[
+            "overview",
+            "requests",
+            "conformance",
+            "anomalies",
+            "sessions",
+        ] {
+            assert!(
+                html.contains(&format!("data-tab=\"{}\"", tab)),
+                "assembled output missing tab button for {}",
+                tab
+            );
+            assert!(
+                html.contains(&format!("id=\"tab-{}\"", tab)),
+                "assembled output missing tab panel for {}",
+                tab
+            );
+        }
     }
 }

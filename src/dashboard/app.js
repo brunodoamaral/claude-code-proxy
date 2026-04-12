@@ -8,19 +8,19 @@ let settingsValidationErrorLine = null;
 let settingsValidationMessage = '';
 let settingsValidateTimer = null;
 
-function isSettingsEditorDirty() {{
+function isSettingsEditorDirty() {
   const editor = document.getElementById('settings-claude-json');
   if (!editor) return false;
   const baseline = editor.dataset.lastLoadedSnapshot;
   if (baseline == null) return (editor.value || '').trim().length > 0;
-  try {{
-    return JSON.stringify(JSON.parse(editor.value || '{{}}')) !== baseline;
-  }} catch (_) {{
+  try {
+    return JSON.stringify(JSON.parse(editor.value || '{}')) !== baseline;
+  } catch (_) {
     return true;
-  }}
-}}
+  }
+}
 
-function parseErrorLine(message, sourceText) {{
+function parseErrorLine(message, sourceText) {
   if (!message) return null;
   const lineMatch = String(message).match(/line\s+(\d+)/i);
   if (lineMatch) return Number(lineMatch[1]);
@@ -30,35 +30,35 @@ function parseErrorLine(message, sourceText) {{
   if (!Number.isFinite(pos) || pos < 0) return null;
   const prefix = sourceText.slice(0, pos);
   return prefix.split('\n').length;
-}}
+}
 
-function highlightJsonLine(line) {{
+function highlightJsonLine(line) {
   const escaped = esc(line);
-  const tokenRe = /"(?:\\.|[^"\\])*"(?=\s*:)|"(?:\\.|[^"\\])*"|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{{}}\[\]:,]/g;
+  const tokenRe = /"(?:\\.|[^"\\])*"(?=\s*:)|"(?:\\.|[^"\\])*"|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{}\[\]:,]/g;
   let last = 0;
   let out = '';
   let m;
-  while ((m = tokenRe.exec(escaped)) !== null) {{
+  while ((m = tokenRe.exec(escaped)) !== null) {
     out += escaped.slice(last, m.index);
     const token = m[0];
     let klass = 'json-punc';
-    if (token.startsWith('"')) {{
+    if (token.startsWith('"')) {
       klass = /"\s*:$/.test(escaped.slice(m.index, m.index + token.length + 3)) ? 'json-key' : 'json-string';
-    }} else if (token === 'true' || token === 'false') {{
+    } else if (token === 'true' || token === 'false') {
       klass = 'json-boolean';
-    }} else if (token === 'null') {{
+    } else if (token === 'null') {
       klass = 'json-null';
-    }} else if (/^-?\d/.test(token)) {{
+    } else if (/^-?\d/.test(token)) {
       klass = 'json-number';
-    }}
-    out += `<span class="${{klass}}">${{token}}</span>`;
+    }
+    out += `<span class="${klass}">${token}</span>`;
     last = m.index + token.length;
-  }}
+  }
   out += escaped.slice(last);
   return out;
-}}
+}
 
-function renderSettingsEditor() {{
+function renderSettingsEditor() {
   const editor = document.getElementById('settings-claude-json');
   const highlight = document.getElementById('settings-highlight');
   const lineNumbers = document.getElementById('settings-line-numbers');
@@ -69,31 +69,31 @@ function renderSettingsEditor() {{
   const text = editor.value || '';
   const lines = text.split('\n');
 
-  highlight.innerHTML = lines.map((line, i) => {{
+  highlight.innerHTML = lines.map((line, i) => {
     const lineNum = i + 1;
     const lineClass = lineNum === settingsValidationErrorLine ? 'settings-code-line settings-error-line' : 'settings-code-line';
-    return `<div class="${{lineClass}}">${{highlightJsonLine(line) || '&nbsp;'}}</div>`;
-  }}).join('');
+    return `<div class="${lineClass}">${highlightJsonLine(line) || '&nbsp;'}</div>`;
+  }).join('');
 
-  lineNumbers.innerHTML = lines.map((_, i) => {{
+  lineNumbers.innerHTML = lines.map((_, i) => {
     const lineNum = i + 1;
     const cls = lineNum === settingsValidationErrorLine ? 'settings-line-num settings-line-num-error' : 'settings-line-num';
-    return `<div class="${{cls}}">${{lineNum}}</div>`;
-  }}).join('');
+    return `<div class="${cls}">${lineNum}</div>`;
+  }).join('');
 
-  if (meta) {{
+  if (meta) {
     const bytes = new TextEncoder().encode(text).length;
     const cursor = editor.selectionStart ?? 0;
     const before = text.slice(0, cursor);
     const row = before.split('\n').length;
     const col = before.length - before.lastIndexOf('\n');
-    meta.textContent = `${{lines.length}} lines • ${{bytes}} bytes • Ln ${{row}}, Col ${{col}}`;
-  }}
+    meta.textContent = `${lines.length} lines • ${bytes} bytes • Ln ${row}, Col ${col}`;
+  }
 
   if (dirty) dirty.style.display = isSettingsEditorDirty() ? 'inline' : 'none';
-}}
+}
 
-function syncSettingsEditorScroll() {{
+function syncSettingsEditorScroll() {
   const editor = document.getElementById('settings-claude-json');
   const highlight = document.getElementById('settings-highlight');
   const lineNumbers = document.getElementById('settings-line-numbers');
@@ -101,64 +101,64 @@ function syncSettingsEditorScroll() {{
   highlight.scrollTop = editor.scrollTop;
   highlight.scrollLeft = editor.scrollLeft;
   lineNumbers.scrollTop = editor.scrollTop;
-}}
+}
 
-function renderSettingsErrorBanner() {{
+function renderSettingsErrorBanner() {
   const banner = document.getElementById('settings-error-banner');
   const text = document.getElementById('settings-error-text');
   const applyBtn = document.getElementById('settings-apply-btn');
   if (!banner || !text || !applyBtn) return;
-  if (settingsValidationErrorLine != null) {{
+  if (settingsValidationErrorLine != null) {
     banner.style.display = 'block';
-    text.textContent = `Line ${{settingsValidationErrorLine}}: ${{settingsValidationMessage}}`;
+    text.textContent = `Line ${settingsValidationErrorLine}: ${settingsValidationMessage}`;
     applyBtn.disabled = true;
     applyBtn.style.opacity = '0.45';
     applyBtn.style.cursor = 'not-allowed';
-  }} else {{
+  } else {
     banner.style.display = 'none';
     text.textContent = '';
     applyBtn.disabled = settingsApplyInFlight;
     applyBtn.style.opacity = '1';
     applyBtn.style.cursor = 'pointer';
-  }}
-}}
+  }
+}
 
-function validateSettingsEditorNow() {{
+function validateSettingsEditorNow() {
   const editor = document.getElementById('settings-claude-json');
   const status = document.getElementById('settings-apply-status');
   if (!editor) return;
 
-  const text = editor.value || '{{}}';
-  try {{
+  const text = editor.value || '{}';
+  try {
     const parsed = JSON.parse(text);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {{
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       settingsValidationErrorLine = 1;
       settingsValidationMessage = 'JSON must be an object';
-    }} else {{
+    } else {
       settingsValidationErrorLine = null;
       settingsValidationMessage = '';
-      if (status && !settingsApplyInFlight) {{
+      if (status && !settingsApplyInFlight) {
         status.textContent = isSettingsEditorDirty() ? 'Unsaved changes' : 'Loaded current settings';
         status.style.color = 'var(--text-2)';
-      }}
-    }}
-  }} catch (err) {{
+      }
+    }
+  } catch (err) {
     settingsValidationErrorLine = parseErrorLine(err?.message || 'Invalid JSON', text) || 1;
     settingsValidationMessage = err?.message || 'Invalid JSON';
-  }}
+  }
 
   renderSettingsEditor();
   renderSettingsErrorBanner();
-}}
+}
 
-function scheduleSettingsValidation() {{
+function scheduleSettingsValidation() {
   if (settingsValidateTimer) clearTimeout(settingsValidateTimer);
-  settingsValidateTimer = setTimeout(() => {{
+  settingsValidateTimer = setTimeout(() => {
     validateSettingsEditorNow();
-  }}, 300);
-}}
+  }, 300);
+}
 
-function jumpToSettingsErrorLine() {{
+function jumpToSettingsErrorLine() {
   const editor = document.getElementById('settings-claude-json');
   if (!editor || settingsValidationErrorLine == null) return;
   const targetLine = Math.max(1, settingsValidationErrorLine);
@@ -170,20 +170,20 @@ function jumpToSettingsErrorLine() {{
   editor.selectionEnd = idx;
   editor.scrollTop = Math.max(0, (targetLine - 4) * 20);
   syncSettingsEditorScroll();
-}}
+}
 
-async function loadSettingsCurrent() {{
+async function loadSettingsCurrent() {
   const editor = document.getElementById('settings-claude-json');
   const status = document.getElementById('settings-apply-status');
   if (!editor) return;
 
-  try {{
+  try {
     const resp = await fetch('/api/settings/current');
-    if (!resp.ok) throw new Error(`HTTP ${{resp.status}}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const payload = await resp.json();
 
     const raw = payload?.data?.claude_settings?.raw_json;
-    const normalized = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {{}};
+    const normalized = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
 
     settingsDiskLoadedSnapshot = normalized;
     settingsMismatchActive = false;
@@ -191,32 +191,32 @@ async function loadSettingsCurrent() {{
     const normalizedText = JSON.stringify(normalized, null, 2);
     const normalizedBaseline = JSON.stringify(normalized);
 
-    if (editor.dataset.lastLoadedSnapshot == null || !isSettingsEditorDirty()) {{
+    if (editor.dataset.lastLoadedSnapshot == null || !isSettingsEditorDirty()) {
       editor.value = normalizedText;
       editor.dataset.lastLoadedSnapshot = normalizedBaseline;
-    }}
+    }
 
-    if (status) {{
+    if (status) {
       status.textContent = 'Loaded current settings';
       status.style.color = 'var(--text-2)';
-    }}
+    }
 
     settingsValidationErrorLine = null;
     settingsValidationMessage = '';
     renderSettingsEditor();
     renderSettingsErrorBanner();
     syncSettingsEditorScroll();
-  }} catch (e) {{
+  } catch (e) {
     console.error('Failed to load current settings:', e);
-    if (status) {{
+    if (status) {
       status.textContent = 'Failed to load current settings';
       status.style.color = 'var(--red)';
-    }}
+    }
     settingsMismatchActive = false;
-  }}
-}}
+  }
+}
 
-async function applySettingsPayload(parsed, {{ successMessage = 'Settings applied' }} = {{}}) {{
+async function applySettingsPayload(parsed, { successMessage = 'Settings applied' } = {}) {
   const editor = document.getElementById('settings-claude-json');
   const status = document.getElementById('settings-apply-status');
   const applyBtn = document.getElementById('settings-apply-btn');
@@ -228,160 +228,160 @@ async function applySettingsPayload(parsed, {{ successMessage = 'Settings applie
   applyBtn.disabled = true;
   applyBtn.textContent = 'Applying…';
 
-  try {{
-    const resp = await fetch('/api/settings/apply', {{
+  try {
+    const resp = await fetch('/api/settings/apply', {
       method: 'POST',
-      headers: {{ 'content-type': 'application/json' }},
-      body: JSON.stringify({{ settings: parsed }})
-    }});
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ settings: parsed })
+    });
 
     const body = await resp.json().catch(() => null);
-    if (!resp.ok) {{
+    if (!resp.ok) {
       const errorNode = body?.error && typeof body.error === 'object' ? body.error : null;
-      const message = errorNode?.message || body?.message || body?.error_message || `HTTP ${{resp.status}}`;
-      if (status) {{
-        status.textContent = `Failed to apply settings: ${{message}}`;
+      const message = errorNode?.message || body?.message || body?.error_message || `HTTP ${resp.status}`;
+      if (status) {
+        status.textContent = `Failed to apply settings: ${message}`;
         status.style.color = 'var(--red)';
-      }}
+      }
       return false;
-    }}
+    }
 
     editor.dataset.lastLoadedSnapshot = JSON.stringify(parsed);
     settingsMismatchActive = false;
     settingsValidationErrorLine = null;
     settingsValidationMessage = '';
-    if (status) {{
+    if (status) {
       status.textContent = successMessage;
       status.style.color = 'var(--green)';
-    }}
+    }
 
     renderSettingsEditor();
     renderSettingsErrorBanner();
-    setTimeout(() => {{
-      if (status && status.textContent === successMessage) {{
+    setTimeout(() => {
+      if (status && status.textContent === successMessage) {
         status.textContent = 'Loaded current settings';
         status.style.color = 'var(--text-2)';
-      }}
-    }}, 3000);
+      }
+    }, 3000);
     return true;
-  }} catch (e) {{
+  } catch (e) {
     console.error('Failed to apply settings:', e);
-    if (status) {{
+    if (status) {
       status.textContent = 'Failed to apply settings';
       status.style.color = 'var(--red)';
-    }}
+    }
     return false;
-  }} finally {{
+  } finally {
     settingsApplyInFlight = false;
     applyBtn.disabled = false;
     applyBtn.textContent = original;
     renderSettingsErrorBanner();
-  }}
-}}
+  }
+}
 
-async function applySettings() {{
+async function applySettings() {
   const editor = document.getElementById('settings-claude-json');
   const status = document.getElementById('settings-apply-status');
   if (!editor) return;
 
   let parsed;
-  try {{
-    parsed = JSON.parse(editor.value || '{{}}');
-  }} catch (_) {{
-    if (status) {{
+  try {
+    parsed = JSON.parse(editor.value || '{}');
+  } catch (_) {
+    if (status) {
       status.textContent = 'Invalid JSON: fix syntax before apply';
       status.style.color = 'var(--red)';
-    }}
+    }
     return;
-  }}
+  }
 
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {{
-    if (status) {{
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    if (status) {
       status.textContent = 'JSON must be an object';
       status.style.color = 'var(--red)';
-    }}
+    }
     return;
-  }}
+  }
 
-  await applySettingsPayload(parsed, {{ successMessage: 'Settings applied' }});
-}}
+  await applySettingsPayload(parsed, { successMessage: 'Settings applied' });
+}
 
-function formatSettingsEditor() {{
+function formatSettingsEditor() {
   const editor = document.getElementById('settings-claude-json');
   const status = document.getElementById('settings-apply-status');
   if (!editor) return;
-  try {{
-    const parsed = JSON.parse(editor.value || '{{}}');
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {{
+  try {
+    const parsed = JSON.parse(editor.value || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('JSON must be an object');
-    }}
+    }
     editor.value = JSON.stringify(parsed, null, 2);
     validateSettingsEditorNow();
-    if (status) {{
+    if (status) {
       status.textContent = 'Formatted JSON';
       status.style.color = 'var(--text-2)';
-    }}
-  }} catch (err) {{
+    }
+  } catch (err) {
     settingsValidationErrorLine = parseErrorLine(err?.message || 'Invalid JSON', editor.value || '') || 1;
     settingsValidationMessage = err?.message || 'Invalid JSON';
     renderSettingsEditor();
     renderSettingsErrorBanner();
-    if (status) {{
+    if (status) {
       status.textContent = 'Cannot format invalid JSON';
       status.style.color = 'var(--red)';
-    }}
-  }}
-}}
+    }
+  }
+}
 
-async function resetSettingsEditor() {{
-  if (isSettingsEditorDirty() && !window.confirm('Discard unsaved settings changes and reload from disk?')) {{
+async function resetSettingsEditor() {
+  if (isSettingsEditorDirty() && !window.confirm('Discard unsaved settings changes and reload from disk?')) {
     return;
-  }}
+  }
   await loadSettingsCurrent();
-}}
+}
 
 // ─── DOMContentLoaded ───
-document.addEventListener('DOMContentLoaded', () => {{
+document.addEventListener('DOMContentLoaded', () => {
   initCharts();
   connectWS();
   resetOverview();
-  setSearchQuery(loadPersistedSearchQuery(), {{ persist: false, reload: false }});
-  setRequestFilter(loadPersistedRequestFilter(), {{ persist: false, reload: false }});
+  setSearchQuery(loadPersistedSearchQuery(), { persist: false, reload: false });
+  setRequestFilter(loadPersistedRequestFilter(), { persist: false, reload: false });
   setOverviewMode(loadPersistedOverviewMode());
-  setActiveTab(loadPersistedTab(), {{ persist: false }});
+  setActiveTab(loadPersistedTab(), { persist: false });
 
-  document.querySelectorAll('th.sortable').forEach(header => {{
-    header.addEventListener('click', () => {{
+  document.querySelectorAll('th.sortable').forEach(header => {
+    header.addEventListener('click', () => {
       const sortBy = header.dataset.sort || 'timestamp_ms';
-      if (currentSortBy === sortBy) {{
+      if (currentSortBy === sortBy) {
         currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
-      }} else {{
+      } else {
         currentSortBy = sortBy;
         currentSortOrder = 'desc';
-      }}
+      }
       updateSortArrows();
       loadEntries();
-    }});
-  }});
+    });
+  });
 
   const sessionFilter = document.getElementById('session-filter');
-  sessionFilter?.addEventListener('change', (e) => {{
+  sessionFilter?.addEventListener('change', (e) => {
     currentSessionFilter = e.target.value || 'all';
-    clearAnomalyFocus({{ restoreSnapshot: false, reload: false }});
+    clearAnomalyFocus({ restoreSnapshot: false, reload: false });
     loadEntries();
-  }});
+  });
 
-  document.addEventListener('keydown', (ev) => {{
-    if (ev.key === 'Escape') {{
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') {
       const backdrop = document.getElementById('request-modal-backdrop');
       if (backdrop) closeModal();
       return;
-    }}
+    }
 
     const active = document.activeElement;
     if (!active || !(active instanceof HTMLElement) || !active.classList.contains('request-row-clickable')) return;
 
-    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {{
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
       ev.preventDefault();
       const rows = Array.from(document.querySelectorAll('#request-table tr.request-row-clickable'));
       const idx = rows.indexOf(active);
@@ -389,44 +389,44 @@ document.addEventListener('DOMContentLoaded', () => {{
       const nextIdx = ev.key === 'ArrowDown' ? Math.min(rows.length - 1, idx + 1) : Math.max(0, idx - 1);
       const target = rows[nextIdx];
       if (target && target.focus) target.focus();
-    }} else if (ev.key === 'Enter') {{
+    } else if (ev.key === 'Enter') {
       ev.preventDefault();
       active.click();
-    }}
-  }});
+    }
+  });
 
   // Load initial entries
   populateSessionFilter();
   loadEntries();
 
   // Tabs
-  document.querySelectorAll('.tab').forEach(tab => {{
-    tab.addEventListener('click', () => {{
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
       setActiveTab(tab.dataset.tab);
-    }});
-  }});
+    });
+  });
 
   // Filters
-  document.querySelectorAll('[data-filter]').forEach(btn => {{
-    btn.addEventListener('click', () => {{
+  document.querySelectorAll('[data-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
       setRequestFilter(btn.dataset.filter);
-    }});
-  }});
+    });
+  });
 
   document.getElementById('overview-live-btn').addEventListener('click', () => setOverviewMode('live'));
   document.getElementById('overview-historical-btn').addEventListener('click', () => setOverviewMode('historical'));
 
   // Search
   let searchTimeout;
-  document.getElementById('search-input').addEventListener('input', (e) => {{
+  document.getElementById('search-input').addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {{
+    searchTimeout = setTimeout(() => {
       setSearchQuery(e.target.value);
-    }}, 200);
-  }});
+    }, 200);
+  });
 
   document.getElementById('expand-anomaly-window-btn').addEventListener('click', expandAnomalyWindow);
-  document.getElementById('clear-anomaly-focus-btn').addEventListener('click', () => clearAnomalyFocus({{ restoreSnapshot: true, reload: true }}));
+  document.getElementById('clear-anomaly-focus-btn').addEventListener('click', () => clearAnomalyFocus({ restoreSnapshot: true, reload: true }));
   document.getElementById('clear-memory-btn').addEventListener('click', clearMemoryStats);
   document.getElementById('clear-data-btn').addEventListener('click', clearAllData);
   const settingsEditor = document.getElementById('settings-claude-json');
@@ -434,25 +434,25 @@ document.addEventListener('DOMContentLoaded', () => {{
   document.getElementById('settings-apply-btn')?.addEventListener('click', applySettings);
   document.getElementById('settings-format-btn')?.addEventListener('click', formatSettingsEditor);
   document.getElementById('settings-reset-btn')?.addEventListener('click', resetSettingsEditor);
-  settingsEditor?.addEventListener('input', () => {{
+  settingsEditor?.addEventListener('input', () => {
     renderSettingsEditor();
     scheduleSettingsValidation();
-  }});
+  });
   settingsEditor?.addEventListener('scroll', syncSettingsEditorScroll);
   settingsEditor?.addEventListener('click', renderSettingsEditor);
   settingsEditor?.addEventListener('keyup', renderSettingsEditor);
-  settingsEditor?.addEventListener('keydown', (event) => {{
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {{
+  settingsEditor?.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault();
       applySettings();
       return;
-    }}
-    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {{
+    }
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
       event.preventDefault();
       formatSettingsEditor();
-    }}
-  }});
+    }
+  });
   settingsErrorBanner?.addEventListener('click', jumpToSettingsErrorLine);
   window.addEventListener('resize', resizeCharts);
   updateSortArrows();
-}});
+});
