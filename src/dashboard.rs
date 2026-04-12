@@ -1,4 +1,5 @@
 use crate::stats::*;
+use crate::store::Store;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -11,8 +12,14 @@ use axum::{
 };
 use std::sync::Arc;
 
-pub async fn run_dashboard(store: Arc<StatsStore>, port: u16) -> Result<(), String> {
-    let app = build_dashboard_app(store);
+#[derive(Clone)]
+struct DashboardState {
+    stats: Arc<StatsStore>,
+    store: Arc<Store>,
+}
+
+pub async fn run_dashboard(stats: Arc<StatsStore>, store: Arc<Store>, port: u16) -> Result<(), String> {
+    let app = build_dashboard_app(stats, store);
 
     let addr = format!("127.0.0.1:{port}");
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -32,7 +39,8 @@ pub async fn run_dashboard(store: Arc<StatsStore>, port: u16) -> Result<(), Stri
         .map_err(|err| format!("Dashboard server stopped unexpectedly: {err}"))
 }
 
-fn build_dashboard_app(store: Arc<StatsStore>) -> Router {
+fn build_dashboard_app(stats: Arc<StatsStore>, store: Arc<Store>) -> Router {
+    let state = DashboardState { stats, store };
     Router::new()
         .route("/", get(serve_dashboard))
         .route("/api/health", get(api_health))
@@ -65,15 +73,15 @@ fn build_dashboard_app(store: Arc<StatsStore>) -> Router {
         .route("/api/entry-body", get(api_entry_body))
         .route("/api/claude-sessions", get(api_claude_sessions))
         .route("/ws", get(ws_handler))
-        .with_state(store)
+        .with_state(state)
 }
 
 async fn serve_dashboard() -> impl IntoResponse {
     Html(assemble_dashboard_html())
 }
 
-async fn api_health(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    let snapshot = store.get_live_stats_snapshot();
+async fn api_health(State(state): State<DashboardState>) -> impl IntoResponse {
+    let snapshot = state.stats.get_live_stats_snapshot();
     Json(serde_json::json!({
         "report_card_metrics": {
             "health_score": snapshot.stats.health_score,
@@ -87,13 +95,13 @@ async fn api_health(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
     }))
 }
 
-async fn api_recent_anomalies(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    let snapshot = store.get_live_stats_snapshot();
+async fn api_recent_anomalies(State(state): State<DashboardState>) -> impl IntoResponse {
+    let snapshot = state.stats.get_live_stats_snapshot();
     Json(snapshot.stats.recent_anomalies)
 }
 
-async fn api_requests(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    let entries = store.get_entries(
+async fn api_requests(State(state): State<DashboardState>) -> impl IntoResponse {
+    let entries = state.stats.get_entries(
         100,
         0,
         &EntryFilter::default(),
@@ -105,9 +113,9 @@ async fn api_requests(State(store): State<Arc<StatsStore>>) -> impl IntoResponse
 
 async fn api_request_detail(
     Path(id): Path<String>,
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
 ) -> impl IntoResponse {
-    let entry = store
+    let entry = state.stats
         .get_entries(
             1000,
             0,
@@ -130,9 +138,9 @@ async fn api_request_detail(
 
 async fn api_request_body(
     Path(id): Path<String>,
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
 ) -> impl IntoResponse {
-    match store.get_body(&id) {
+    match state.stats.get_body(&id) {
         Some(body) => (StatusCode::OK, Json(serde_json::json!(body))).into_response(),
         None => (
             StatusCode::NOT_FOUND,
@@ -142,12 +150,15 @@ async fn api_request_body(
     }
 }
 
-async fn api_request_tools(Path(_id): Path<String>) -> impl IntoResponse {
-    Json(serde_json::json!([]))
+async fn api_request_tools(Path(id): Path<String>, State(state): State<DashboardState>) -> impl IntoResponse {
+    match state.store.get_tool_usage_for_request(&id) {
+        Ok(tools) => Json(serde_json::json!(tools)),
+        Err(_) => Json(serde_json::json!([])),
+    }
 }
 
-async fn api_models(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    let entries = store.get_entries(1000, 0, &EntryFilter::default(), None, None);
+async fn api_models(State(state): State<DashboardState>) -> impl IntoResponse {
+    let entries = state.stats.get_entries(1000, 0, &EntryFilter::default(), None, None);
     let mut by_model: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for entry in entries {
         *by_model.entry(entry.model).or_insert(0) += 1;
@@ -155,16 +166,29 @@ async fn api_models(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
     Json(serde_json::json!(by_model))
 }
 
-async fn api_model_profile(Path(name): Path<String>) -> impl IntoResponse {
-    Json(serde_json::json!({"model": name, "profile": serde_json::Value::Null}))
+async fn api_model_profile(Path(name): Path<String>, State(state): State<DashboardState>) -> impl IntoResponse {
+    let sample_count = state.store.get_model_profile_sample_count(&name).ok().flatten().unwrap_or(0);
+    let observed = state.store.get_model_profile_observed(&name).ok().flatten();
+    Json(serde_json::json!({
+        "model": name,
+        "sample_count": sample_count,
+        "observed": observed,
+    }))
 }
 
-async fn api_model_comparison(Path(name): Path<String>) -> impl IntoResponse {
-    Json(serde_json::json!({"model": name, "comparison": serde_json::Value::Null}))
+async fn api_model_comparison(Path(name): Path<String>, State(state): State<DashboardState>) -> impl IntoResponse {
+    let observed = state.store.get_model_profile_observed(&name).ok().flatten();
+    Json(serde_json::json!({
+        "model": name,
+        "observed": observed,
+    }))
 }
 
-async fn api_model_config() -> impl IntoResponse {
-    Json(serde_json::json!({"profiles": {}, "model_mappings": {}}))
+async fn api_model_config(State(state): State<DashboardState>) -> impl IntoResponse {
+    match state.store.list_all_model_stats() {
+        Ok(models) => Json(serde_json::json!({"models": models})),
+        Err(_) => Json(serde_json::json!({"models": []})),
+    }
 }
 
 async fn api_put_model_config(Json(payload): Json<serde_json::Value>) -> impl IntoResponse {
@@ -174,26 +198,27 @@ async fn api_put_model_config(Json(payload): Json<serde_json::Value>) -> impl In
     )
 }
 
-async fn api_anomalies(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    let snapshot = store.get_live_stats_snapshot();
+async fn api_anomalies(State(state): State<DashboardState>) -> impl IntoResponse {
+    let snapshot = state.stats.get_live_stats_snapshot();
     Json(snapshot.stats.recent_anomalies)
 }
 
-async fn api_anomaly_detail(Path(id): Path<String>) -> impl IntoResponse {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({"error": format!("anomaly {id} not found")})),
-    )
+async fn api_anomaly_detail(Path(id): Path<String>, State(state): State<DashboardState>) -> impl IntoResponse {
+    match state.store.get_anomaly_by_id(&id) {
+        Ok(Some(anomaly)) => (StatusCode::OK, Json(anomaly)).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("anomaly {id} not found")}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
+    }
 }
 
 async fn api_session_by_id(
     Path(id): Path<String>,
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
 ) -> impl IntoResponse {
     let details = if id == "unknown" {
-        build_unknown_session_details(&store, 200)
+        build_unknown_session_details(&state.stats, 200)
     } else {
-        store.get_session_details(&id, None, 200, false)
+        state.stats.get_session_details(&id, None, 200, false)
     };
 
     if matches!(details.presence, SessionPresence::None) {
@@ -213,12 +238,12 @@ struct StatsQuery {
 }
 
 async fn api_stats(
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
     Query(q): Query<StatsQuery>,
 ) -> impl IntoResponse {
     let snapshot = match q.mode.unwrap_or(StatsMode::Live) {
-        StatsMode::Live => store.get_live_stats_snapshot(),
-        StatsMode::Historical => store.get_historical_stats_snapshot(),
+        StatsMode::Live => state.stats.get_live_stats_snapshot(),
+        StatsMode::Historical => state.stats.get_historical_stats_snapshot(),
     };
     axum::Json(snapshot)
 }
@@ -257,7 +282,7 @@ struct EntriesResponse {
 }
 
 async fn api_entries(
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
     Query(q): Query<EntriesQuery>,
 ) -> impl IntoResponse {
     let anomaly_ts_ms = q
@@ -290,7 +315,7 @@ async fn api_entries(
             .clamp(1_000, 3_600_000);
 
         let focused =
-            store.get_entries_with_anomaly_focus(limit, offset, &filter, anomaly_ts_ms, window_ms);
+            state.stats.get_entries_with_anomaly_focus(limit, offset, &filter, anomaly_ts_ms, window_ms);
         let within_window_count = focused.entries.len();
 
         return axum::Json(EntriesResponse {
@@ -304,7 +329,7 @@ async fn api_entries(
         });
     }
 
-    let entries = store.get_entries(
+    let entries = state.stats.get_entries(
         limit,
         offset,
         &filter,
@@ -326,8 +351,8 @@ async fn api_entries(
     })
 }
 
-async fn api_sessions(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    let sessions = store.get_sessions();
+async fn api_sessions(State(state): State<DashboardState>) -> impl IntoResponse {
+    let sessions = state.stats.get_sessions();
     axum::Json(sessions)
 }
 
@@ -348,8 +373,8 @@ fn versioned<T: serde::Serialize>(data: T) -> VersionedEnvelope<T> {
     }
 }
 
-async fn api_sessions_merged(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    axum::Json(versioned(store.get_merged_sessions()))
+async fn api_sessions_merged(State(state): State<DashboardState>) -> impl IntoResponse {
+    axum::Json(versioned(state.stats.get_merged_sessions()))
 }
 
 #[derive(serde::Deserialize)]
@@ -388,28 +413,28 @@ struct TimelineItem {
 }
 
 async fn api_correlations(
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
     Query(q): Query<CorrelationsQuery>,
 ) -> impl IntoResponse {
-    let links = store.get_correlations_for_request(&q.request_id, q.limit.unwrap_or(50));
+    let links = state.stats.get_correlations_for_request(&q.request_id, q.limit.unwrap_or(50));
     axum::Json(versioned(links))
 }
 
 async fn api_explanations(
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
     Query(q): Query<ExplanationsQuery>,
 ) -> impl IntoResponse {
-    let rows = store.get_explanations_for_request(&q.request_id, q.limit.unwrap_or(10));
+    let rows = state.stats.get_explanations_for_request(&q.request_id, q.limit.unwrap_or(10));
     axum::Json(versioned(rows))
 }
 
 async fn api_timeline(
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
     Query(q): Query<TimelineQuery>,
 ) -> impl IntoResponse {
     let cap = q.limit.unwrap_or(200).min(1000);
 
-    let mut request_items: Vec<TimelineItem> = store
+    let mut request_items: Vec<TimelineItem> = state.stats
         .get_entries(
             cap,
             0,
@@ -437,7 +462,7 @@ async fn api_timeline(
         })
         .collect();
 
-    let mut event_items: Vec<TimelineItem> = store
+    let mut event_items: Vec<TimelineItem> = state.stats
         .get_local_events(Some(&q.session_id), cap)
         .into_iter()
         .filter_map(|event| {
@@ -467,11 +492,11 @@ async fn api_timeline(
 }
 
 async fn api_session_graph(
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
     Query(q): Query<SessionGraphQuery>,
 ) -> impl IntoResponse {
     let limit = q.limit.unwrap_or(200).min(1000);
-    let graph = store
+    let graph = state.stats
         .get_session_graph(&q.session_id, limit)
         .unwrap_or(SessionGraph {
             session_id: q.session_id,
@@ -569,7 +594,7 @@ fn build_unknown_session_details(store: &StatsStore, limit: usize) -> SessionDet
 }
 
 async fn api_session_details(
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
     Query(q): Query<SessionDetailsQuery>,
 ) -> impl IntoResponse {
     let session_id = q.session_id.trim();
@@ -583,9 +608,9 @@ async fn api_session_details(
 
     let requested_limit = q.limit.unwrap_or(200).max(1);
     let details = if session_id == "unknown" {
-        build_unknown_session_details(&store, requested_limit)
+        build_unknown_session_details(&state.stats, requested_limit)
     } else {
-        store.get_session_details(
+        state.stats.get_session_details(
             session_id,
             q.project_path.as_deref(),
             requested_limit,
@@ -610,10 +635,10 @@ struct EntryBodyQuery {
 }
 
 async fn api_entry_body(
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
     Query(q): Query<EntryBodyQuery>,
 ) -> impl IntoResponse {
-    match store.get_body(&q.request_id) {
+    match state.stats.get_body(&q.request_id) {
         Some(body) => (StatusCode::OK, Json(serde_json::json!(body))).into_response(),
         None => (
             StatusCode::NOT_FOUND,
@@ -623,23 +648,23 @@ async fn api_entry_body(
     }
 }
 
-async fn api_claude_sessions(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    axum::Json(store.get_claude_sessions())
+async fn api_claude_sessions(State(state): State<DashboardState>) -> impl IntoResponse {
+    axum::Json(state.stats.get_claude_sessions())
 }
 
-async fn api_reset_memory(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    axum::Json(store.clear_stats())
+async fn api_reset_memory(State(state): State<DashboardState>) -> impl IntoResponse {
+    axum::Json(state.stats.clear_stats())
 }
 
-async fn api_reset(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    axum::Json(store.clear_all())
+async fn api_reset(State(state): State<DashboardState>) -> impl IntoResponse {
+    axum::Json(state.stats.clear_all())
 }
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(store): State<Arc<StatsStore>>,
+    State(state): State<DashboardState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| ws_connection(socket, store))
+    ws.on_upgrade(move |socket| ws_connection(socket, state.stats))
 }
 
 async fn ws_connection(mut socket: WebSocket, store: Arc<StatsStore>) {
@@ -715,6 +740,11 @@ mod tests {
     };
     use tower::util::ServiceExt;
 
+    fn test_v2_store() -> Arc<Store> {
+        let path = std::env::temp_dir().join(format!("proxy-v2-dash-{}.db", uuid::Uuid::new_v4()));
+        Arc::new(Store::new(&path).unwrap())
+    }
+
     #[tokio::test]
     async fn health_endpoint_returns_report_card_metrics() {
         let log_dir = std::env::temp_dir().join(format!(
@@ -731,7 +761,7 @@ mod tests {
             2_097_152,
             log_dir.clone(),
         ));
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
 
         let response = app
             .oneshot(
@@ -1009,7 +1039,7 @@ mod tests {
                 .unwrap();
         store.add_entry(outside_window);
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1083,7 +1113,7 @@ mod tests {
         ));
         store.add_entry(sample_entry());
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1130,7 +1160,7 @@ mod tests {
         entry.id = "req-invalid-anomaly-fallback".into();
         store.add_entry(entry);
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1173,7 +1203,7 @@ mod tests {
             2_097_152,
             log_dir.clone(),
         ));
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
 
         let response = app
             .oneshot(
@@ -1220,7 +1250,7 @@ mod tests {
         entry.session_id = None;
         store.add_entry(entry);
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1270,7 +1300,7 @@ mod tests {
             2_097_152,
             log_dir.clone(),
         ));
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
 
         let response = app
             .oneshot(
@@ -1321,7 +1351,7 @@ mod tests {
         );
         assert_eq!(store.persisted_entry_count(), 1);
 
-        let app = build_dashboard_app(store.clone());
+        let app = build_dashboard_app(store.clone(), test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1372,7 +1402,7 @@ mod tests {
         );
         assert_eq!(store.persisted_entry_count(), 1);
 
-        let app = build_dashboard_app(store.clone());
+        let app = build_dashboard_app(store.clone(), test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1412,7 +1442,7 @@ mod tests {
         ));
         store.add_entry(sample_entry());
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1466,7 +1496,7 @@ mod tests {
         second.error = Some("forbidden".into());
         store.add_entry(second);
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1526,7 +1556,7 @@ mod tests {
             created_at_ms: chrono::Utc::now().timestamp_millis(),
         });
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1625,7 +1655,7 @@ mod tests {
             payload_json: serde_json::json!({}),
         });
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1683,7 +1713,7 @@ mod tests {
             2_097_152,
             log_dir.clone(),
         ));
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
 
         let response = app
             .oneshot(
@@ -1760,7 +1790,7 @@ mod tests {
             created_at_ms: chrono::Utc::now().timestamp_millis(),
         });
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1859,7 +1889,7 @@ mod tests {
             created_at_ms: chrono::Utc::now().timestamp_millis(),
         });
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()
@@ -1914,7 +1944,7 @@ mod tests {
             claude_dir,
         ));
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
 
         let get_response = app
             .clone()
@@ -1980,7 +2010,7 @@ mod tests {
         req.session_id = Some("s-endpoint".into());
         store.add_entry(req);
 
-        let app = build_dashboard_app(store);
+        let app = build_dashboard_app(store, test_v2_store());
         let response = app
             .oneshot(
                 Request::builder()

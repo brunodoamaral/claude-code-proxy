@@ -126,25 +126,30 @@ async fn main() {
 
     store.load_from_db();
 
-    match Store::new(&data_dir.join("proxy-v2.db")) {
-        Ok(analyzer_store) => {
-            let analyzer_store = Arc::new(analyzer_store);
-            let worker_rules = analyzer_rules.clone();
-            tokio::spawn(async move {
-                let mut ticker = interval(Duration::from_secs(5));
-                loop {
-                    ticker.tick().await;
-                    if let Err(err) =
-                        run_analyzer_tick_with_rules(analyzer_store.clone(), &worker_rules).await
-                    {
-                        eprintln!("Analyzer tick failed: {err}");
-                    }
-                }
-            });
-        }
+    let v2_store = match Store::new(&data_dir.join("proxy-v2.db")) {
+        Ok(s) => Arc::new(s),
         Err(err) => {
-            eprintln!("Analyzer worker store initialization failed: {err}");
+            let msg = format!("V2 store initialization failed: {err}");
+            eprintln!("{msg}");
+            write_log(&msg);
+            Arc::new(Store::new(&data_dir.join("proxy-v2.db")).expect("V2 store retry failed"))
         }
+    };
+
+    {
+        let analyzer_store = v2_store.clone();
+        let worker_rules = analyzer_rules.clone();
+        tokio::spawn(async move {
+            let mut ticker = interval(Duration::from_secs(5));
+            loop {
+                ticker.tick().await;
+                if let Err(err) =
+                    run_analyzer_tick_with_rules(analyzer_store.clone(), &worker_rules).await
+                {
+                    eprintln!("Analyzer tick failed: {err}");
+                }
+            }
+        });
     }
 
     print_banner(
@@ -158,9 +163,10 @@ async fn main() {
     let dashboard_url = format!("http://127.0.0.1:{}", args.dashboard_port);
 
     let store_dash = store.clone();
+    let v2_dash = v2_store.clone();
     let dash_port = args.dashboard_port;
     tokio::spawn(async move {
-        if let Err(err) = dashboard::run_dashboard(store_dash, dash_port).await {
+        if let Err(err) = dashboard::run_dashboard(store_dash, v2_dash, dash_port).await {
             eprintln!("Dashboard startup failed: {err}");
         }
     });
