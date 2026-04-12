@@ -2026,6 +2026,13 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assembled_dashboard_contains_websocket_logic() {
+        let html = super::assemble_dashboard_html();
+        assert!(html.contains("function connectWS("), "websocket.js must contain connectWS()");
+        assert!(html.contains("ws.onmessage"), "websocket.js must handle onmessage");
+    }
+
+    #[tokio::test]
     async fn assembled_dashboard_contains_css_variables() {
         let html = super::assemble_dashboard_html();
         assert!(html.contains("--bg-0"), "CSS variables must be present in assembled output");
