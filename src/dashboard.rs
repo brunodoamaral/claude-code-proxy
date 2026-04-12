@@ -2065,4 +2065,18 @@ mod tests {
         assert!(html.contains("id=\"tab-requests\""), "shell.html must contain requests tab panel");
         assert!(html.contains("id=\"request-table\""), "shell.html must contain request table");
     }
+
+    #[tokio::test]
+    async fn assembled_dashboard_contains_conformance_tab() {
+        let html = super::assemble_dashboard_html();
+        assert!(html.contains("id=\"tab-conformance\""), "shell.html must contain conformance tab panel");
+        assert!(html.contains("id=\"conformance-scoreboard\""), "shell.html must contain scoreboard");
+    }
+
+    #[tokio::test]
+    async fn assembled_dashboard_contains_anomalies_tab() {
+        let html = super::assemble_dashboard_html();
+        assert!(html.contains("id=\"tab-anomalies\""), "shell.html must contain anomalies tab panel");
+        assert!(html.contains("id=\"anomaly-list\""), "shell.html must contain anomaly list");
+    }
 }

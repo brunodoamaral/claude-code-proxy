@@ -199,11 +199,33 @@
 
   <div id="request-modal-root"></div>
 
-  <!-- ═══ CONFORMANCE TAB (placeholder) ═══ -->
-  <div id="tab-conformance" class="tab-panel" style="display:none"></div>
+  <!-- ═══ CONFORMANCE TAB ═══ -->
+  <div class="tab-content" id="tab-conformance">
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Model Conformance Scoreboard</h3>
+        <div id="conformance-scoreboard">
+          <div class="empty-state" style="padding:20px 12px">
+            <h3 style="font-size:14px">No conformance scores yet</h3>
+            <p>Conformance analysis appears after request profiling data is available</p>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Conformance Notes</h3>
+        <div id="conformance-notes" style="color:var(--text-2);font-size:12px">
+          Compare capability, reliability, policy, and prompt-alignment dimensions across profiled models.
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <!-- ═══ ANOMALIES TAB (placeholder) ═══ -->
-  <div id="tab-anomalies" class="tab-panel" style="display:none"></div>
+  <!-- ═══ ANOMALIES TAB ═══ -->
+  <div class="tab-content" id="tab-anomalies">
+    <div class="anomaly-list" id="anomaly-list">
+      <div class="empty-state"><h3>No anomalies detected</h3><p>Issues will appear here in real-time</p></div>
+    </div>
+  </div>
 
   <!-- ═══ SESSIONS TAB (placeholder) ═══ -->
   <div id="tab-sessions" class="tab-panel" style="display:none"></div>
