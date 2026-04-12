@@ -71,6 +71,9 @@ tool_usage: id, request_id, tool_name, tool_input_json
 
 Single-page app assembled at compile time from `src/dashboard/` files.
 
+**Dashboard State:** `DashboardState { stats: Arc<StatsStore>, store: Arc<Store> }` — dual-store
+architecture giving handlers access to both the real-time stats DB and the V2 analysis DB.
+
 ### File Structure
 
 ```
@@ -128,14 +131,19 @@ Result: Single HTML response served at `GET /`.
 | `tabs/overview.js` | 247 | Stat cards, charts, breakdowns |
 | `utils.js` | 147 | Shared helpers and constants |
 | `components/charts.js` | 74 | Chart.js wrappers |
-| `components/websocket.js` | 41 | WebSocket connection |
-| `tabs/conformance.js` | 2 | Conformance placeholder |
-| `tabs/anomalies.js` | 1 | Anomaly constant |
-| **Total** | **2,886** | |
+| `components/websocket.js` | 42 | WebSocket connection + anomaly render trigger |
+| `tabs/conformance.js` | 68 | Model scoreboard with profiles |
+| `tabs/anomalies.js` | 46 | Anomaly list with severity badges |
+| **Total** | **2,999** | |
 
 ### Tabs
 
-5 tabs: Overview, Requests, Model Conformance, Anomalies, Sessions
+5 tabs (all fully functional):
+- **Overview** — health score, stat cards, timeseries charts, model/error breakdowns
+- **Requests** — sortable table, search, filters, modal with body viewer, correlations, explanations, tool usage
+- **Model Conformance** — model scoreboard with request counts, avg TTFT, error rates, profiling status
+- **Anomalies** — severity-badged anomaly feed with click-to-focus request filtering
+- **Sessions** — split layout browser with session list, detail panel, timeline, conversation preview
 
 ### Frontend Stack
 
@@ -150,24 +158,27 @@ Result: Single HTML response served at `GET /`.
 | Module | Lines | Responsibility |
 |--------|-------|---------------|
 | `stats.rs` | ~7,350 | Stats store, live stats, session aggregation, DB schema |
-| `dashboard.rs` | ~2,230 | Axum routes, REST API, WebSocket, HTML assembly |
-| `store.rs` | ~870 | V2 SQLite store, FTS5, CRUD |
-| `proxy.rs` | ~690 | HTTP proxy, SSE streaming, request forwarding |
-| `model_profile.rs` | ~410 | Model config, behavior class resolution, auto-tune |
-| `main.rs` | ~430 | CLI, runtime orchestration, analyzer worker, auto-configure, graceful shutdown |
-| `types.rs` | ~220 | V2 types, forward-compat tracking |
-| `analyzer.rs` | ~110 | Anomaly detection rules, health score |
-| `correlation.rs` | ~50 | PayloadPolicy enum |
+| `dashboard.rs` | ~2,300 | Axum routes, REST API, WebSocket, HTML assembly, dual-store state |
+| `store.rs` | ~1,000 | V2 SQLite store, FTS5, CRUD, tool usage, anomaly lookup |
+| `proxy.rs` | ~825 | HTTP proxy, SSE streaming, request forwarding, tool extraction |
+| `main.rs` | ~580 | CLI, runtime orchestration, analyzer worker, correlation + explanation integration, auto-configure, graceful shutdown |
+| `analyzer.rs` | ~383 | All 11 anomaly detection rules (SlowTtft, Stall, Timeout, ApiError, ClientError, RateLimited, Overload, HighTokens, CacheMiss, InterruptedStream, MaxTokensHit) |
+| `explain.rs` | ~240 | Rule-based explanation generator for anomalies |
+| `correlation.rs` | ~218 | Correlation engine: temporal, session, config-drift linking |
+| `types.rs` | ~206 | V2 types, forward-compat tracking |
+| `model_profile.rs` | ~110 | Model config, behavior class resolution, auto-tune |
 
 ---
 
 ## Analyzer Worker
 
 Runs every 5 seconds:
-1. Fetch up to 200 unanalyzed requests
-2. For each: detect anomalies against recent model history
+1. Fetch up to 200 unanalyzed requests from V2 store
+2. For each: detect anomalies (all 11 rules) against recent model history
 3. Persist anomalies atomically (transaction: delete prior → insert new → mark analyzed)
 4. At 50-sample boundaries: compute and store model observed stats
+5. Generate explanations for requests with anomalies → write to Stats store
+6. Run correlation engine (temporal, session, config-drift) → write to Stats store
 
 ---
 

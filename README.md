@@ -6,11 +6,13 @@ A near-zero-latency logging proxy for Claude Code with a real-time web dashboard
 
 Sits transparently between Claude Code and the Anthropic API. Logs every request and provides:
 
-- **Real-time anomaly detection** — slow TTFT, stream stalls, error spirals, rate limiting, gateway errors
-- **Model profiling** — automatic behavior fingerprinting with 140-parameter profiles, auto-tuning at 50-sample intervals
+- **Real-time anomaly detection** — 11 detection rules: slow TTFT, stream stalls, timeouts, API/client errors, rate limiting, overload, high tokens, cache misses, interrupted streams, max tokens hit
+- **Model profiling** — automatic behavior fingerprinting, auto-tuning at 50-sample intervals
+- **Explanation engine** — human-readable explanations for every detected anomaly with evidence
+- **Correlation engine** — links API anomalies to local events (temporal, session, config-drift matching)
 - **Session tracking** — timelines, conversation drill-down, and session graphs per Claude Code session
 - **Forward-compat monitoring** — detects unknown SSE events, stop reasons, and API fields as Anthropic evolves the protocol
-- **5-tab dashboard** — overview report card, request browser, model conformance, anomaly feed, session explorer
+- **5-tab dashboard** — overview report card, request browser with tool usage, model conformance scoreboard, anomaly feed with explanations, session explorer
 
 Adds **< 0.5ms** latency per request (measured on localhost passthrough).
 
@@ -42,6 +44,9 @@ claude-proxy.exe --target https://api.anthropic.com --open-browser
 
 # Custom ports:
 claude-proxy.exe --target https://api.anthropic.com --port 8001 --dashboard-port 3001
+
+# Auto-configure Claude Code settings (injects proxy URL, restores on Ctrl+C):
+claude-proxy.exe --target https://api.anthropic.com --auto-configure --open-browser
 ```
 
 This starts:
@@ -57,7 +62,7 @@ run --package claude-proxy --bin claude-proxy -- --target https://api.anthropic.
 
 ### 4. Configure Claude Code
 
-Set `ANTHROPIC_BASE_URL` in Claude Code settings:
+Set `ANTHROPIC_BASE_URL` in Claude Code settings (or use `--auto-configure` to do this automatically):
 
 ```json
 {
@@ -67,6 +72,8 @@ Set `ANTHROPIC_BASE_URL` in Claude Code settings:
 }
 ```
 
+With `--auto-configure`, the proxy injects this into `~/.claude/settings.json` on startup and restores the original on Ctrl+C shutdown.
+
 Start using Claude Code normally — everything shows up in the dashboard.
 
 ## Dashboard
@@ -75,8 +82,8 @@ Start using Claude Code normally — everything shows up in the dashboard.
 
 - **Overview** — health score (0-100), stat cards, TTFT/error timeseries, model and error breakdowns
 - **Requests** — sortable table with search, filters (error/5xx/4xx/timeout/stall), session filter, request detail modal with body viewer, correlation links, session timeline
-- **Model Conformance** — conformance scoreboard (populates as profiling data accumulates)
-- **Anomalies** — severity-badged anomaly feed with click-to-focus request filtering
+- **Model Conformance** — model scoreboard with request counts, avg TTFT, error rates, profiling status (populates as data accumulates)
+- **Anomalies** — severity-badged anomaly feed with explanations and click-to-focus request filtering
 - **Sessions** — split layout browser with session list, detail panel (metrics, timeline, conversation preview)
 
 All data updates via WebSocket in real-time.
