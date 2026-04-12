@@ -3,8 +3,10 @@ mod correlation;
 mod dashboard;
 mod model_profile;
 mod proxy;
+#[allow(dead_code)] // Many methods are test infrastructure or scaffolded for future wiring
 mod stats;
 mod store;
+#[allow(dead_code)] // Conformance scaffolds and forward-compat types wired incrementally
 mod types;
 
 use analyzer::AnalyzerRules;

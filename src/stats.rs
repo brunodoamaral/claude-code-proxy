@@ -2547,15 +2547,14 @@ impl StatsStore {
 
         let mut deleted = SessionDeleteDbRowsByTable::default();
 
-        deleted.request_bodies = tx
-            .execute(
+        deleted.request_bodies =
+            tx.execute(
                 "DELETE FROM request_bodies WHERE request_id IN (
                     SELECT id FROM requests WHERE session_id = ?1
                 )",
                 params![trimmed],
             )
-            .map_err(|err| format!("failed to delete request_bodies: {err}"))?
-            as u64;
+            .map_err(|err| format!("failed to delete request_bodies: {err}"))? as u64;
 
         deleted.request_correlations = tx
             .execute(
@@ -2567,15 +2566,14 @@ impl StatsStore {
             .map_err(|err| format!("failed to delete request_correlations: {err}"))?
             as u64;
 
-        deleted.explanations = tx
-            .execute(
+        deleted.explanations =
+            tx.execute(
                 "DELETE FROM explanations WHERE request_id IN (
                     SELECT id FROM requests WHERE session_id = ?1
                 )",
                 params![trimmed],
             )
-            .map_err(|err| format!("failed to delete explanations: {err}"))?
-            as u64;
+            .map_err(|err| format!("failed to delete explanations: {err}"))? as u64;
 
         deleted.requests =
             tx.execute(
@@ -2843,7 +2841,8 @@ impl StatsStore {
                                 continue;
                             }
 
-                            let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+                            let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed)
+                            else {
                                 continue;
                             };
 
@@ -2858,15 +2857,12 @@ impl StatsStore {
                                 continue;
                             }
 
-                            let message_activity_ms = extract_conversation_items_from_json(
-                                &sid,
-                                &project_name,
-                                &json,
-                            )
-                            .into_iter()
-                            .map(|item| item.timestamp_ms)
-                            .max()
-                            .unwrap_or(0);
+                            let message_activity_ms =
+                                extract_conversation_items_from_json(&sid, &project_name, &json)
+                                    .into_iter()
+                                    .map(|item| item.timestamp_ms)
+                                    .max()
+                                    .unwrap_or(0);
 
                             let line_activity_ms = ["timestamp", "timestamp_ms", "created_at"]
                                 .iter()
@@ -2874,7 +2870,8 @@ impl StatsStore {
                                 .find_map(parse_timestamp_ms)
                                 .unwrap_or(0);
 
-                            let local_activity_ms = modified_ms.max(message_activity_ms.max(line_activity_ms));
+                            let local_activity_ms =
+                                modified_ms.max(message_activity_ms.max(line_activity_ms));
 
                             let session = sessions.entry(sid.clone()).or_insert(ClaudeSession {
                                 session_id: sid,
@@ -4426,14 +4423,17 @@ mod tests {
         ]
         .join("\n");
 
-        let items = extract_conversation_items_from_source_text("session-jsonl", source_path, &text);
+        let items =
+            extract_conversation_items_from_source_text("session-jsonl", source_path, &text);
 
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].role, "user");
         assert_eq!(items[0].timestamp_ms, 1000);
         assert_eq!(items[1].role, "assistant");
         assert_eq!(items[1].timestamp_ms, 1001);
-        assert!(items.iter().all(|item| item.source_path.contains("session.jsonl")));
+        assert!(items
+            .iter()
+            .all(|item| item.source_path.contains("session.jsonl")));
     }
 
     #[test]
@@ -6489,7 +6489,10 @@ mod tests {
             .find(|session| session.session_id == "session-root-jsonl-camel")
             .expect("expected root jsonl session with sessionId key on repeated read");
         assert!(camel_once.has_local_evidence);
-        assert_eq!(camel_once.last_local_activity_ms, camel_twice.last_local_activity_ms);
+        assert_eq!(
+            camel_once.last_local_activity_ms,
+            camel_twice.last_local_activity_ms
+        );
 
         let snake_once = discovered_once
             .iter()
@@ -6500,7 +6503,10 @@ mod tests {
             .find(|session| session.session_id == "session-root-jsonl-snake")
             .expect("expected root jsonl session with session_id key on repeated read");
         assert!(snake_once.has_local_evidence);
-        assert_eq!(snake_once.last_local_activity_ms, snake_twice.last_local_activity_ms);
+        assert_eq!(
+            snake_once.last_local_activity_ms,
+            snake_twice.last_local_activity_ms
+        );
 
         let iso_newer_ms = chrono::DateTime::parse_from_rfc3339(iso_newer)
             .unwrap()
@@ -7006,7 +7012,14 @@ mod tests {
         ));
         std::fs::create_dir_all(&log_dir).unwrap();
 
-        let store = StatsStore::new(2_500, log_dir.clone(), 20.0, 8.0, 2_097_152, log_dir.clone());
+        let store = StatsStore::new(
+            2_500,
+            log_dir.clone(),
+            20.0,
+            8.0,
+            2_097_152,
+            log_dir.clone(),
+        );
         let stale_time = chrono::Utc::now() - chrono::Duration::minutes(10);
 
         let request_count = 1_100u64;
@@ -7060,7 +7073,10 @@ mod tests {
             .delete_session_db_rows_with_live_guard("session-delete-large")
             .expect("large session delete should succeed");
         assert!(!outcome.blocked_live);
-        assert_eq!(outcome.deleted_db_rows_by_table.request_bodies, request_count);
+        assert_eq!(
+            outcome.deleted_db_rows_by_table.request_bodies,
+            request_count
+        );
         assert_eq!(
             outcome.deleted_db_rows_by_table.request_correlations,
             request_count
@@ -7085,7 +7101,9 @@ mod tests {
         assert_eq!(remaining_request_bodies, 0);
 
         let remaining_request_correlations: i64 = conn
-            .query_row("SELECT COUNT(*) FROM request_correlations", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM request_correlations", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(remaining_request_correlations, 0);
 
@@ -7105,7 +7123,6 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&log_dir);
     }
-
 
     #[test]
     fn session_delete_blocks_when_liveness_flips_before_commit() {

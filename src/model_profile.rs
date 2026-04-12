@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[allow(dead_code)] // Scaffolded for conformance tab model config
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
     pub profiles: HashMap<String, serde_json::Value>,
     pub model_mappings: HashMap<String, String>,
 }
 
+#[allow(dead_code)] // Scaffolded for conformance tab
 pub fn resolve_behavior_class(config: &ModelConfig, model_name: &str) -> Option<String> {
     if let Some(class) = config.model_mappings.get(model_name) {
         return Some(class.clone());
@@ -31,6 +33,7 @@ pub fn should_auto_tune(sample_count: u64) -> bool {
     sample_count >= 50 && sample_count.is_multiple_of(50)
 }
 
+#[allow(dead_code)] // Scaffolded for conformance tab
 pub fn fingerprint_parameter_names() -> Vec<&'static str> {
     vec![
         "avg_ttft_ms",

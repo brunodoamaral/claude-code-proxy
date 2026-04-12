@@ -3,6 +3,7 @@ use crate::types::{AnomalyKind, RequestRecord, Severity};
 #[derive(Debug, Clone)]
 pub struct AnalyzerRules {
     pub slow_ttft_threshold_ms: f64,
+    #[allow(dead_code)] // Wired in main.rs, consumed by future stall detection
     pub stall_threshold_s: f64,
 }
 
@@ -45,6 +46,7 @@ pub fn detect_anomalies(
     out
 }
 
+#[allow(dead_code)] // Scaffolded for dashboard health score widget
 pub fn compute_health_score(
     error_count: usize,
     warning_count: usize,
