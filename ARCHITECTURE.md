@@ -74,7 +74,7 @@ Single-page app assembled at compile time from `src/dashboard/` files:
 ```
 src/dashboard/
 ├── shell.html              # HTML skeleton with {placeholders}
-├── styles.css              # All CSS (brace-escaped for format!)
+├── styles.css              # All CSS
 ├── app.js                  # DOMContentLoaded wiring, settings editor
 ├── utils.js                # Shared helpers: fmt, esc, formatDuration, etc.
 ├── components/

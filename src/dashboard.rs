@@ -2208,4 +2208,19 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn assembled_dashboard_has_no_stray_doubled_braces() {
+        let html = super::assemble_dashboard_html();
+        // The only intentional {{}} is in the settings editor textarea default
+        let cleaned = html.replace("{{}}", "");
+        assert!(
+            !cleaned.contains("{{"),
+            "unexpected {{ in assembled output — JS/CSS files must use single braces"
+        );
+        assert!(
+            !cleaned.contains("}}"),
+            "unexpected }} in assembled output — JS/CSS files must use single braces"
+        );
+    }
 }
