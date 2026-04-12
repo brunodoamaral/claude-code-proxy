@@ -16,10 +16,116 @@
   <div class="header-right">
     <span><span class="status-dot disconnected" id="ws-dot"></span><span id="ws-status">Connecting...</span></span>
     <span id="uptime" style="color:var(--text-2)">0:00:00</span>
+    <div class="toolbar-actions">
+      <button class="toolbar-btn secondary" id="clear-memory-btn" type="button" title="Reset dashboard statistics in memory but keep saved SQLite data">Clear in-memory stats</button>
+      <button class="toolbar-btn danger" id="clear-data-btn" type="button" title="Delete saved SQLite request history and reset all dashboard statistics">Clear stats + data</button>
+    </div>
   </div>
 </div>
 <div class="container">
-  <p style="color:var(--text-1)">Dashboard shell loaded — tabs coming next.</p>
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">Overview</div>
+    <div class="tab" data-tab="requests">Requests</div>
+    <div class="tab" data-tab="conformance">Model Conformance</div>
+    <div class="tab" data-tab="anomalies">Anomalies</div>
+    <div class="tab" data-tab="sessions">Sessions</div>
+  </div>
+
+  <!-- ═══ OVERVIEW TAB ═══ -->
+  <div class="tab-content active" id="tab-overview">
+    <div class="table-controls" style="margin-bottom:16px;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:11px;color:var(--text-2);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Overview scope</span>
+        <button class="filter-btn" id="overview-live-btn" type="button">Live</button>
+        <button class="filter-btn" id="overview-historical-btn" type="button">Historical</button>
+      </div>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-2);font-family:var(--mono)" id="overview-coverage">Mode: live</span>
+    </div>
+    <div class="grid grid-4" id="stat-cards">
+      <div class="card health-card">
+        <div class="card-label">Health Score</div>
+        <div class="card-value" id="health-score">—</div>
+        <div class="card-sub" id="health-label">—</div>
+        <div class="health-bar" id="health-bar"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">Total Requests</div>
+        <div class="card-value" id="total-requests">0</div>
+        <div class="card-sub" id="requests-rate">0 req/min</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Success Rate</div>
+        <div class="card-value" id="success-rate">—</div>
+        <div class="card-sub" id="error-count">0 errors</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Avg TTFT</div>
+        <div class="card-value" id="avg-ttft">—</div>
+        <div class="card-sub" id="ttft-p95">P95: —</div>
+      </div>
+    </div>
+
+    <div class="grid grid-4">
+      <div class="card">
+        <div class="card-label">Median TTFT</div>
+        <div class="card-value" id="median-ttft">—</div>
+        <div class="card-sub" id="worst-ttft">Worst: —</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Stalls</div>
+        <div class="card-value" id="total-stalls">0</div>
+        <div class="card-sub" id="stall-time">0s lost</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Timeouts</div>
+        <div class="card-value" id="total-timeouts">0</div>
+        <div class="card-sub" id="conn-errors">0 conn errors</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Tokens</div>
+        <div class="card-value" id="total-tokens">0</div>
+        <div class="card-sub" id="token-breakdown">in: 0 / out: 0</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card chart-card">
+        <h3>Time to First Token (last 60 min)</h3>
+        <div class="chart-wrap">
+          <canvas id="chart-ttft"></canvas>
+        </div>
+      </div>
+      <div class="card chart-card">
+        <h3>Errors &amp; Requests (last 60 min)</h3>
+        <div class="chart-wrap">
+          <canvas id="chart-errors"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Error Breakdown</h3>
+        <div id="error-breakdown"></div>
+      </div>
+      <div class="card">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Models Used</h3>
+        <div id="model-breakdown"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ REQUESTS TAB (placeholder) ═══ -->
+  <div id="tab-requests" class="tab-panel" style="display:none"></div>
+
+  <!-- ═══ CONFORMANCE TAB (placeholder) ═══ -->
+  <div id="tab-conformance" class="tab-panel" style="display:none"></div>
+
+  <!-- ═══ ANOMALIES TAB (placeholder) ═══ -->
+  <div id="tab-anomalies" class="tab-panel" style="display:none"></div>
+
+  <!-- ═══ SESSIONS TAB (placeholder) ═══ -->
+  <div id="tab-sessions" class="tab-panel" style="display:none"></div>
 </div>
 <script>
 {utils_js}

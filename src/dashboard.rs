@@ -2046,4 +2046,13 @@ mod tests {
         assert!(html.contains("function updateCharts("), "charts.js must contain updateCharts()");
         assert!(html.contains("function resetCharts("), "charts.js must contain resetCharts()");
     }
+
+    #[tokio::test]
+    async fn assembled_dashboard_contains_overview_tab() {
+        let html = super::assemble_dashboard_html();
+        assert!(html.contains("function loadOverview("), "overview.js must contain loadOverview()");
+        assert!(html.contains("function updateOverview("), "overview.js must contain updateOverview()");
+        assert!(html.contains("id=\"tab-overview\""), "shell.html must contain overview tab panel");
+        assert!(html.contains("id=\"health-score\""), "shell.html must contain health score card");
+    }
 }
