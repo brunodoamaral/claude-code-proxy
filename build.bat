@@ -3,7 +3,7 @@ setlocal
 
 echo.
 echo  ======================================
-echo   Claude Code Proxy — Release Build
+echo   Claude Code Proxy - Release Build
 echo  ======================================
 echo.
 
@@ -30,5 +30,9 @@ echo  Options:
 echo    --port 8000              Proxy port
 echo    --dashboard-port 3000    Dashboard port
 echo    --open-browser           Auto-open dashboard
+echo    --auto-configure         Auto-set ANTHROPIC_BASE_URL in settings.json
 echo    --data-dir PATH          Storage directory
+echo    --stall-threshold 0.5    Stall detection threshold (seconds)
+echo    --slow-ttft-threshold 3000  Slow TTFT threshold (ms)
+echo    --max-body-size 2097152  Max body to store (bytes)
 echo.
