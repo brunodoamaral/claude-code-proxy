@@ -63,6 +63,7 @@ model_observed: model, observed_json, updated_at
 
 sessions: session_id, first_seen, last_seen, request_count
 tool_usage: id, request_id, tool_name, tool_input_json
+settings_history: id, saved_at_ms, content_hash, settings_json, source
 ```
 
 ---
@@ -71,8 +72,8 @@ tool_usage: id, request_id, tool_name, tool_input_json
 
 Single-page app assembled at compile time from `src/dashboard/` files.
 
-**Dashboard State:** `DashboardState { stats: Arc<StatsStore>, store: Arc<Store> }` — dual-store
-architecture giving handlers access to both the real-time stats DB and the V2 analysis DB.
+**Dashboard State:** `DashboardState { stats: Arc<StatsStore>, store: Arc<Store>, model_config: Option<Arc<ModelConfig>> }` — dual-store
+architecture with optional model config giving handlers access to both the real-time stats DB, the V2 analysis DB, and expected baselines for conformance comparison.
 
 ### File Structure
 
@@ -141,7 +142,7 @@ Result: Single HTML response served at `GET /`.
 5 tabs (all fully functional):
 - **Overview** — health score, stat cards, timeseries charts, model/error breakdowns
 - **Requests** — sortable table, search, filters, modal with body viewer, correlations, explanations, tool usage
-- **Model Conformance** — model scoreboard with request counts, avg TTFT, error rates, profiling status
+- **Model Conformance** — model scoreboard with request counts, avg TTFT, error rates, expected vs observed baselines with deviation colors, profiling status
 - **Anomalies** — severity-badged anomaly feed with click-to-focus request filtering
 - **Sessions** — split layout browser with session list, detail panel, timeline, conversation preview
 
@@ -166,7 +167,7 @@ Result: Single HTML response served at `GET /`.
 | `explain.rs` | ~240 | Rule-based explanation generator for anomalies |
 | `correlation.rs` | ~218 | Correlation engine: temporal, session, config-drift linking |
 | `types.rs` | ~206 | V2 types, forward-compat tracking |
-| `model_profile.rs` | ~110 | Model config, behavior class resolution, auto-tune |
+| `model_profile.rs` | ~190 | Model config loading, behavior class resolution, fingerprint parameter names, auto-tune |
 
 ---
 
@@ -179,6 +180,7 @@ Runs every 5 seconds:
 4. At 50-sample boundaries: compute and store model observed stats
 5. Generate explanations for requests with anomalies → write to Stats store
 6. Run correlation engine (temporal, session, config-drift) → write to Stats store
+7. Check `~/.claude/settings.json` for changes → snapshot to settings history if hash changed
 
 ---
 
@@ -216,3 +218,13 @@ Serialization: serde, serde_json, chrono
 CLI: clap, uuid, dirs, parking_lot
 Streaming: futures-util, tokio-stream
 Frontend: Chart.js (CDN)
+
+---
+
+## CI/CD
+
+GitHub Actions workflow (`.github/workflows/release.yml`):
+- **Trigger:** Push a `v*` tag
+- **Runner:** `windows-latest`
+- **Steps:** checkout → install Rust → cache cargo → run tests → build release → create GitHub Release
+- **Assets:** `claude-proxy.exe`, `model-config.sample.json`, `README.md`

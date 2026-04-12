@@ -11,6 +11,8 @@ Sits transparently between Claude Code and the Anthropic API. Logs every request
 - **Explanation engine** — human-readable explanations for every detected anomaly with evidence
 - **Correlation engine** — links API anomalies to local events (temporal, session, config-drift matching)
 - **Session tracking** — timelines, conversation drill-down, and session graphs per Claude Code session
+- **Model conformance** — expected vs observed baselines with deviation scoring (load via `--model-config`)
+- **Settings history** — automatic tracking of `~/.claude/settings.json` changes with history viewer
 - **Forward-compat monitoring** — detects unknown SSE events, stop reasons, and API fields as Anthropic evolves the protocol
 - **5-tab dashboard** — overview report card, request browser with tool usage, model conformance scoreboard, anomaly feed with explanations, session explorer
 
@@ -41,6 +43,9 @@ claude-proxy.exe --target https://api.anthropic.com
 
 # With auto-open dashboard in browser:
 claude-proxy.exe --target https://api.anthropic.com --open-browser
+
+# With model config for conformance baselines:
+claude-proxy.exe --target https://api.anthropic.com --model-config model-config.sample.json --open-browser
 
 # Custom ports:
 claude-proxy.exe --target https://api.anthropic.com --port 8001 --dashboard-port 3001
@@ -82,7 +87,7 @@ Start using Claude Code normally — everything shows up in the dashboard.
 
 - **Overview** — health score (0-100), stat cards, TTFT/error timeseries, model and error breakdowns
 - **Requests** — sortable table with search, filters (error/5xx/4xx/timeout/stall), session filter, request detail modal with body viewer, correlation links, session timeline
-- **Model Conformance** — model scoreboard with request counts, avg TTFT, error rates, profiling status (populates as data accumulates)
+- **Model Conformance** — model scoreboard with request counts, avg TTFT, error rates, expected vs observed baselines with deviation colors (green ≤20%, yellow 20-50%, red >50%), profiling status (populates as data accumulates)
 - **Anomalies** — severity-badged anomaly feed with explanations and click-to-focus request filtering
 - **Sessions** — split layout browser with session list, detail panel (metrics, timeline, conversation preview)
 
@@ -95,6 +100,7 @@ claude-proxy --target https://api.anthropic.com   # Required: upstream API URL
              --port 8000                           # Proxy port (default: 8000)
              --dashboard-port 3000                 # Dashboard port (default: 3000)
              --data-dir ~/.claude/api-logs          # Storage directory
+             --model-config model-config.sample.json  # Model config with expected baselines
              --stall-threshold 0.5                  # Stall detection threshold in seconds (default: 0.5)
              --slow-ttft-threshold 3000             # Slow TTFT threshold in ms (default: 3000)
              --max-body-size 2097152                # Max request/response body to store (default: 2MB)
@@ -132,8 +138,8 @@ If the proxy crashes without restoring, the backup file remains — you can manu
 ### Models
 - `GET /api/models` — model list with stats
 - `GET /api/models/:name/profile` — model behavior profile
-- `GET /api/models/:name/comparison` — model comparison data
-- `GET /api/model-config` — model configuration
+- `GET /api/models/:name/comparison` — observed vs expected with deviations
+- `GET /api/model-config` — model configuration and loaded profiles
 - `PUT /api/model-config` — update model configuration
 
 ### Anomalies
@@ -152,6 +158,10 @@ If the proxy crashes without restoring, the backup file remains — you can manu
 ### Intelligence
 - `GET /api/correlations?request_id=` — correlation links
 - `GET /api/explanations?request_id=` — ranked explanations
+
+### Settings History
+- `GET /api/settings-history` — list settings change snapshots
+- `GET /api/settings-history/:id` — settings snapshot detail
 
 ### WebSocket
 - `GET /ws` — real-time stats stream
@@ -187,6 +197,15 @@ Dashboard is a vanilla JS SPA (Chart.js for charts, WebSocket for real-time upda
 at compile time from 11 focused files under `src/dashboard/` via Rust's `format!()` + `include_str!()`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for full details.
+
+## Releases
+
+Pre-built Windows binaries are available on the [GitHub Releases](https://github.com/herdanw/claude-code-proxy/releases) page. Each release includes:
+- `claude-proxy.exe` — the proxy binary
+- `model-config.sample.json` — sample model config with opus/sonnet/haiku baselines (140 parameters each)
+- `README.md`
+
+To create a new release, tag and push: `git tag v1.1.0 && git push origin v1.1.0`
 
 ## License
 
