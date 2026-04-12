@@ -115,8 +115,89 @@
     </div>
   </div>
 
-  <!-- ═══ REQUESTS TAB (placeholder) ═══ -->
-  <div id="tab-requests" class="tab-panel" style="display:none"></div>
+  <!-- ═══ REQUESTS TAB ═══ -->
+  <div class="tab-content" id="tab-requests">
+    <div class="table-controls">
+      <label class="sr-only" for="search-input">Search requests</label>
+      <input type="text" class="search-input" id="search-input" placeholder="Search path, model, error...">
+      <button class="filter-btn" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="error">Errors</button>
+      <button class="filter-btn" data-filter="5xx">5xx</button>
+      <button class="filter-btn" data-filter="4xx">4xx</button>
+      <button class="filter-btn" data-filter="timeout">Timeout</button>
+      <button class="filter-btn" data-filter="stall">Stalls</button>
+      <label class="sr-only" for="session-filter">Filter by session</label>
+      <select class="filter-btn" id="session-filter" style="min-width:180px">
+        <option value="all">All sessions</option>
+      </select>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-2);font-family:var(--mono)" id="result-count">0 results</span>
+    </div>
+    <div id="anomaly-focus-bar" class="card" style="display:none;margin:0 0 12px 0;padding:10px 12px;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <span id="anomaly-focus-label" style="font-size:12px;color:var(--text-1);font-family:var(--mono)"></span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="filter-btn" id="expand-anomaly-window-btn" type="button" hidden>Expand to ±10m</button>
+        <button class="filter-btn" id="clear-anomaly-focus-btn" type="button">Clear anomaly focus</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;max-height:70vh;overflow-y:auto">
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="timestamp_ms">Time <span class="sort-arrow"></span></th>
+            <th class="sortable" data-sort="status_code">Status <span class="sort-arrow"></span></th>
+            <th class="sortable" data-sort="ttft_ms">TTFT <span class="sort-arrow"></span></th>
+            <th class="sortable" data-sort="duration_ms">Duration <span class="sort-arrow"></span></th>
+            <th class="sortable" data-sort="model">Model <span class="sort-arrow"></span></th>
+            <th class="sortable" data-sort="output_tokens">Tokens <span class="sort-arrow"></span></th>
+            <th>Stalls</th>
+            <th>Session</th>
+            <th>Path</th>
+            <th>Info</th>
+          </tr>
+        </thead>
+        <tbody id="request-table"></tbody>
+      </table>
+    </div>
+
+    <div class="card correlation-panel" id="correlation-panel">
+      <div class="correlation-header">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em">Correlation Links</h3>
+        <span class="correlation-request-id" id="correlation-request-id">Select a request row</span>
+      </div>
+      <div class="correlation-list" id="correlation-list">
+        <div class="empty-state" style="padding:20px 12px">
+          <h3 style="font-size:14px">No request selected</h3>
+          <p>Click a request row to load correlation evidence</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card correlation-panel" id="request-explanations">
+      <div class="correlation-header">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em">Top Explanations</h3>
+      </div>
+      <div class="correlation-list" id="request-explanations-list">
+        <div class="empty-state" style="padding:20px 12px">
+          <h3 style="font-size:14px">No request selected</h3>
+          <p>Choose a request to load explanation cards</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card correlation-panel" id="session-timeline">
+      <div class="correlation-header">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em">Session Timeline</h3>
+      </div>
+      <div class="correlation-list" id="session-timeline-list">
+        <div class="empty-state" style="padding:20px 12px">
+          <h3 style="font-size:14px">No session selected</h3>
+          <p>Pick a request with a session ID to load timeline overlays</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="request-modal-root"></div>
 
   <!-- ═══ CONFORMANCE TAB (placeholder) ═══ -->
   <div id="tab-conformance" class="tab-panel" style="display:none"></div>

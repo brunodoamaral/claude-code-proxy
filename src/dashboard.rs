@@ -2055,4 +2055,14 @@ mod tests {
         assert!(html.contains("id=\"tab-overview\""), "shell.html must contain overview tab panel");
         assert!(html.contains("id=\"health-score\""), "shell.html must contain health score card");
     }
+
+    #[tokio::test]
+    async fn assembled_dashboard_contains_requests_tab() {
+        let html = super::assemble_dashboard_html();
+        assert!(html.contains("function loadEntries("), "requests.js must contain loadEntries()");
+        assert!(html.contains("function addTableRow("), "requests.js must contain addTableRow()");
+        assert!(html.contains("function selectRequest("), "requests.js must contain selectRequest()");
+        assert!(html.contains("id=\"tab-requests\""), "shell.html must contain requests tab panel");
+        assert!(html.contains("id=\"request-table\""), "shell.html must contain request table");
+    }
 }
