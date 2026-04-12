@@ -49,6 +49,11 @@ struct Args {
 
     #[arg(long, default_value_t = false, action = clap::ArgAction::SetTrue)]
     open_browser: bool,
+
+    /// Automatically set ANTHROPIC_BASE_URL in ~/.claude/settings.json to the proxy
+    /// address on startup, and restore the original value on shutdown (Ctrl+C).
+    #[arg(long, default_value_t = false, action = clap::ArgAction::SetTrue)]
+    auto_configure: bool,
 }
 
 #[tokio::main]
@@ -69,7 +74,12 @@ async fn main() {
                 .truncate(true)
                 .open(path)
             {
-                let _ = writeln!(f, "[{}] {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), msg);
+                let _ = writeln!(
+                    f,
+                    "[{}] {}",
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                    msg
+                );
             }
         }
     };
@@ -83,7 +93,10 @@ async fn main() {
     };
 
     if let Some(model_config_path) = &args.model_config {
-        let msg = format!("--model-config is not wired in this phase yet: {}", model_config_path.display());
+        let msg = format!(
+            "--model-config is not wired in this phase yet: {}",
+            model_config_path.display()
+        );
         eprintln!("{msg}");
         write_log(&msg);
         std::process::exit(2);
@@ -157,11 +170,49 @@ async fn main() {
 
     write_log("Proxy and dashboard started successfully.");
 
-    if let Err(err) = proxy::run_proxy(store, &target, args.port).await {
-        let msg = format!("Proxy startup failed: {err}");
-        eprintln!("{msg}");
-        write_log(&msg);
-        std::process::exit(1);
+    // Auto-configure: inject proxy URL into Claude Code settings.json
+    let auto_configured = if args.auto_configure {
+        match configure_claude_settings(args.port) {
+            Ok(()) => {
+                let msg = format!(
+                    "Auto-configured ~/.claude/settings.json → ANTHROPIC_BASE_URL = http://127.0.0.1:{}",
+                    args.port
+                );
+                eprintln!("  \x1b[92m✓\x1b[0m {msg}");
+                write_log(&msg);
+                true
+            }
+            Err(err) => {
+                let msg = format!("Auto-configure failed: {err}");
+                eprintln!("  \x1b[91m✗\x1b[0m {msg}");
+                write_log(&msg);
+                false
+            }
+        }
+    } else {
+        false
+    };
+
+    // Run proxy with Ctrl+C handler for graceful shutdown
+    tokio::select! {
+        result = proxy::run_proxy(store, &target, args.port) => {
+            if let Err(err) = result {
+                let msg = format!("Proxy startup failed: {err}");
+                eprintln!("{msg}");
+                write_log(&msg);
+                if auto_configured {
+                    restore_claude_settings(&write_log);
+                }
+                std::process::exit(1);
+            }
+        }
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\n  \x1b[93m▸\x1b[0m Shutting down...");
+            write_log("Received Ctrl+C, shutting down.");
+            if auto_configured {
+                restore_claude_settings(&write_log);
+            }
+        }
     }
 }
 
@@ -190,6 +241,94 @@ async fn run_analyzer_tick_with_rules(
     }
 
     Ok(())
+}
+
+/// Inject proxy URL into ~/.claude/settings.json, backing up the original.
+fn configure_claude_settings(proxy_port: u16) -> Result<(), String> {
+    let settings_path = dirs::home_dir()
+        .ok_or("Cannot determine home directory")?
+        .join(".claude")
+        .join("settings.json");
+    let backup_path = settings_path.with_extension("json.proxy-backup");
+
+    if !settings_path.exists() {
+        return Err(format!(
+            "Settings file not found: {}",
+            settings_path.display()
+        ));
+    }
+
+    // Warn if a previous backup exists (unclean shutdown)
+    if backup_path.exists() {
+        eprintln!(
+            "  \x1b[93m⚠\x1b[0m Previous backup found at {}. A prior proxy session may not have shut down cleanly.",
+            backup_path.display()
+        );
+    }
+
+    // Read and parse
+    let contents = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read {}: {e}", settings_path.display()))?;
+    let mut json: serde_json::Value = serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to parse {}: {e}", settings_path.display()))?;
+
+    // Save backup (full copy of original)
+    std::fs::copy(&settings_path, &backup_path)
+        .map_err(|e| format!("Failed to create backup: {e}"))?;
+
+    // Inject env.ANTHROPIC_BASE_URL
+    let proxy_url = format!("http://127.0.0.1:{proxy_port}");
+    if let Some(obj) = json.as_object_mut() {
+        let env = obj.entry("env").or_insert_with(|| serde_json::json!({}));
+        if let Some(env_obj) = env.as_object_mut() {
+            env_obj.insert(
+                "ANTHROPIC_BASE_URL".to_string(),
+                serde_json::Value::String(proxy_url),
+            );
+        }
+    }
+
+    // Write back with pretty-print
+    let output = serde_json::to_string_pretty(&json)
+        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+    std::fs::write(&settings_path, output)
+        .map_err(|e| format!("Failed to write {}: {e}", settings_path.display()))?;
+
+    Ok(())
+}
+
+/// Restore ~/.claude/settings.json from backup and delete the backup file.
+fn restore_claude_settings(write_log: &dyn Fn(&str)) {
+    let settings_path = match dirs::home_dir() {
+        Some(home) => home.join(".claude").join("settings.json"),
+        None => {
+            write_log("Cannot determine home directory for settings restore.");
+            return;
+        }
+    };
+    let backup_path = settings_path.with_extension("json.proxy-backup");
+
+    if !backup_path.exists() {
+        write_log("No backup file found, nothing to restore.");
+        return;
+    }
+
+    match std::fs::copy(&backup_path, &settings_path) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&backup_path);
+            let msg = "Restored ~/.claude/settings.json from backup.";
+            eprintln!("  \x1b[92m✓\x1b[0m {msg}");
+            write_log(msg);
+        }
+        Err(err) => {
+            let msg = format!(
+                "Failed to restore settings.json from backup: {err}. Manual restore from {} may be needed.",
+                backup_path.display()
+            );
+            eprintln!("  \x1b[91m✗\x1b[0m {msg}");
+            write_log(&msg);
+        }
+    }
 }
 
 fn print_banner(

@@ -154,7 +154,7 @@ Result: Single HTML response served at `GET /`.
 | `store.rs` | ~870 | V2 SQLite store, FTS5, CRUD |
 | `proxy.rs` | ~690 | HTTP proxy, SSE streaming, request forwarding |
 | `model_profile.rs` | ~410 | Model config, behavior class resolution, auto-tune |
-| `main.rs` | ~330 | CLI, runtime orchestration, analyzer worker |
+| `main.rs` | ~430 | CLI, runtime orchestration, analyzer worker, auto-configure, graceful shutdown |
 | `types.rs` | ~220 | V2 types, forward-compat tracking |
 | `analyzer.rs` | ~110 | Anomaly detection rules, health score |
 | `correlation.rs` | ~50 | PayloadPolicy enum |

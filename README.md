@@ -92,7 +92,22 @@ claude-proxy --target https://api.anthropic.com   # Required: upstream API URL
              --slow-ttft-threshold 3000             # Slow TTFT threshold in ms (default: 3000)
              --max-body-size 2097152                # Max request/response body to store (default: 2MB)
              --open-browser                         # Auto-open dashboard in browser
+             --auto-configure                       # Auto-set ANTHROPIC_BASE_URL in settings.json
 ```
+
+### Auto-Configure Mode
+
+Use `--auto-configure` to skip manual settings.json editing:
+
+```powershell
+claude-proxy.exe --target https://api.anthropic.com --auto-configure --open-browser
+```
+
+This will:
+1. **On startup**: Back up `~/.claude/settings.json` to `settings.json.proxy-backup`, then set `env.ANTHROPIC_BASE_URL` to the proxy address
+2. **On shutdown (Ctrl+C)**: Restore the original `settings.json` from the backup and delete the backup file
+
+If the proxy crashes without restoring, the backup file remains — you can manually copy `settings.json.proxy-backup` back to `settings.json`.
 
 ## API Endpoints
 
