@@ -14,7 +14,7 @@ use futures_util::StreamExt;
 use std::sync::Arc;
 use std::time::Instant;
 
-pub async fn run_proxy(store: Arc<StatsStore>, target: &str, port: u16) -> Result<(), String> {
+pub async fn run_proxy(store: Arc<StatsStore>, v2_store: Option<Arc<crate::store::Store>>, target: &str, port: u16) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(600))
         .connect_timeout(std::time::Duration::from_secs(30))
@@ -28,6 +28,7 @@ pub async fn run_proxy(store: Arc<StatsStore>, target: &str, port: u16) -> Resul
         client,
         target: target.to_string(),
         store,
+        v2_store,
     };
 
     let app = Router::new()
@@ -57,6 +58,7 @@ struct ProxyState {
     client: reqwest::Client,
     target: String,
     store: Arc<StatsStore>,
+    v2_store: Option<Arc<crate::store::Store>>,
 }
 
 async fn proxy_handler(
@@ -205,6 +207,7 @@ async fn proxy_handler(
     if is_sse {
         let stall_threshold = state.store.stall_threshold;
         let store = state.store.clone();
+        let v2_store_clone = state.v2_store.clone();
         let req_body_for_store = String::from_utf8_lossy(&body_bytes).to_string();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(256);
@@ -219,6 +222,7 @@ async fn proxy_handler(
             let mut stop_reason = None;
             let mut response_buffer = Vec::new();
             let mut sse_line_buffer = String::new();
+            let mut tool_uses: Vec<(String, String)> = Vec::new();
 
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
@@ -244,6 +248,7 @@ async fn proxy_handler(
                             &mut sse_line_buffer,
                             &mut usage_data,
                             &mut stop_reason,
+                            &mut tool_uses,
                         );
 
                         response_buffer.extend_from_slice(&chunk);
@@ -278,6 +283,13 @@ async fn proxy_handler(
             store.add_entry(final_entry);
             let resp_body_str = String::from_utf8_lossy(&response_buffer).to_string();
             store.write_body(&final_entry_id, &req_body_for_store, &resp_body_str);
+
+            // Persist tool usage to v2 store
+            if let Some(ref v2) = v2_store_clone {
+                for (tool_name, tool_input) in &tool_uses {
+                    let _ = v2.insert_tool_usage(&final_entry_id, tool_name, tool_input);
+                }
+            }
         });
 
         let body_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
@@ -393,13 +405,14 @@ fn extract_sse_usage_and_metadata(
     line_buffer: &mut String,
     usage: &mut UsageData,
     stop_reason: &mut Option<String>,
+    tool_uses: &mut Vec<(String, String)>,
 ) {
     let text = match std::str::from_utf8(chunk) {
         Ok(t) => t,
         Err(_) => return,
     };
 
-    process_sse_text_chunk(text, line_buffer, usage, stop_reason);
+    process_sse_text_chunk(text, line_buffer, usage, stop_reason, tool_uses);
 }
 
 fn process_sse_text_chunk(
@@ -407,8 +420,9 @@ fn process_sse_text_chunk(
     line_buffer: &mut String,
     usage: &mut UsageData,
     stop_reason: &mut Option<String>,
+    tool_uses: &mut Vec<(String, String)>,
 ) {
-    process_sse_text_chunk_with_stats(chunk_text, line_buffer, usage, stop_reason, None);
+    process_sse_text_chunk_with_stats(chunk_text, line_buffer, usage, stop_reason, tool_uses, None);
 }
 
 fn process_sse_text_chunk_with_stats(
@@ -416,6 +430,7 @@ fn process_sse_text_chunk_with_stats(
     line_buffer: &mut String,
     usage: &mut UsageData,
     stop_reason: &mut Option<String>,
+    tool_uses: &mut Vec<(String, String)>,
     unknown_stats: Option<&mut crate::types::UnknownFieldStats>,
 ) {
     line_buffer.push_str(chunk_text);
@@ -436,12 +451,12 @@ fn process_sse_text_chunk_with_stats(
             }
         }
 
-        process_sse_line(&line, usage, stop_reason);
+        process_sse_line(&line, usage, stop_reason, tool_uses);
         line_buffer.drain(..=newline_idx);
     }
 }
 
-fn process_sse_line(line: &str, usage: &mut UsageData, stop_reason: &mut Option<String>) {
+fn process_sse_line(line: &str, usage: &mut UsageData, stop_reason: &mut Option<String>, tool_uses: &mut Vec<(String, String)>) {
     if !line.starts_with("data: ") {
         return;
     }
@@ -470,6 +485,19 @@ fn process_sse_line(line: &str, usage: &mut UsageData, stop_reason: &mut Option<
 
         if let Some(reason) = data.get("stop_reason").and_then(|v| v.as_str()) {
             *stop_reason = Some(reason.to_string());
+        }
+
+        // Extract tool_use from content_block_start events
+        if let Some(event_type) = data.get("type").and_then(|t| t.as_str()) {
+            if event_type == "content_block_start" {
+                if let Some(cb) = data.get("content_block") {
+                    if cb.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                        let name = cb.get("name").and_then(|n| n.as_str()).unwrap_or("unknown").to_string();
+                        let input = cb.get("input").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+                        tool_uses.push((name, input));
+                    }
+                }
+            }
         }
     }
 }
@@ -624,7 +652,7 @@ mod tests {
         let mut usage = UsageData::default();
         let mut stop_reason = None;
         let mut line_buffer = String::new();
-        extract_sse_usage_and_metadata(chunk, &mut line_buffer, &mut usage, &mut stop_reason);
+        extract_sse_usage_and_metadata(chunk, &mut line_buffer, &mut usage, &mut stop_reason, &mut Vec::new());
 
         assert_eq!(usage.thinking_tokens, Some(7));
         assert_eq!(stop_reason.as_deref(), Some("end_turn"));
@@ -639,11 +667,11 @@ mod tests {
         let mut stop_reason = None;
         let mut line_buffer = String::new();
 
-        extract_sse_usage_and_metadata(chunk1, &mut line_buffer, &mut usage, &mut stop_reason);
+        extract_sse_usage_and_metadata(chunk1, &mut line_buffer, &mut usage, &mut stop_reason, &mut Vec::new());
         assert_eq!(usage.thinking_tokens, None);
         assert_eq!(stop_reason, None);
 
-        extract_sse_usage_and_metadata(chunk2, &mut line_buffer, &mut usage, &mut stop_reason);
+        extract_sse_usage_and_metadata(chunk2, &mut line_buffer, &mut usage, &mut stop_reason, &mut Vec::new());
         assert_eq!(usage.thinking_tokens, Some(9));
         assert_eq!(stop_reason.as_deref(), Some("end_turn"));
     }
@@ -686,5 +714,53 @@ mod tests {
 
         assert_eq!(entry.thinking_tokens, Some(5));
         assert_eq!(entry.stop_reason.as_deref(), Some("end_turn"));
+    }
+
+    #[test]
+    fn extract_tool_use_from_content_block_start() {
+        let chunk = b"data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_123\",\"name\":\"read_file\",\"input\":{}}}\n\n";
+
+        let mut usage = UsageData::default();
+        let mut stop_reason = None;
+        let mut line_buffer = String::new();
+        let mut tool_uses = Vec::new();
+
+        extract_sse_usage_and_metadata(chunk, &mut line_buffer, &mut usage, &mut stop_reason, &mut tool_uses);
+
+        assert_eq!(tool_uses.len(), 1);
+        assert_eq!(tool_uses[0].0, "read_file");
+        assert_eq!(tool_uses[0].1, "{}");
+    }
+
+    #[test]
+    fn extract_multiple_tool_uses_from_stream() {
+        let chunk1 = b"data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"read_file\",\"input\":{}}}\n\n";
+        let chunk2 = b"data: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_2\",\"name\":\"write_file\",\"input\":{}}}\n\n";
+
+        let mut usage = UsageData::default();
+        let mut stop_reason = None;
+        let mut line_buffer = String::new();
+        let mut tool_uses = Vec::new();
+
+        extract_sse_usage_and_metadata(chunk1, &mut line_buffer, &mut usage, &mut stop_reason, &mut tool_uses);
+        extract_sse_usage_and_metadata(chunk2, &mut line_buffer, &mut usage, &mut stop_reason, &mut tool_uses);
+
+        assert_eq!(tool_uses.len(), 2);
+        assert_eq!(tool_uses[0].0, "read_file");
+        assert_eq!(tool_uses[1].0, "write_file");
+    }
+
+    #[test]
+    fn non_tool_use_content_block_is_ignored() {
+        let chunk = b"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n";
+
+        let mut usage = UsageData::default();
+        let mut stop_reason = None;
+        let mut line_buffer = String::new();
+        let mut tool_uses = Vec::new();
+
+        extract_sse_usage_and_metadata(chunk, &mut line_buffer, &mut usage, &mut stop_reason, &mut tool_uses);
+
+        assert!(tool_uses.is_empty());
     }
 }

@@ -203,7 +203,7 @@ async fn main() {
 
     // Run proxy with Ctrl+C handler for graceful shutdown
     tokio::select! {
-        result = proxy::run_proxy(store, &target, args.port) => {
+        result = proxy::run_proxy(store, Some(v2_store.clone()), &target, args.port) => {
             if let Err(err) = result {
                 let msg = format!("Proxy startup failed: {err}");
                 eprintln!("{msg}");
