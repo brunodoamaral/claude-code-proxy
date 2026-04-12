@@ -139,16 +139,6 @@ impl Store {
                 sample_count INTEGER NOT NULL DEFAULT 0,
                 last_updated_ms INTEGER
             );
-
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_id TEXT PRIMARY KEY,
-                first_seen_ms INTEGER NOT NULL,
-                last_seen_ms INTEGER NOT NULL,
-                request_count INTEGER NOT NULL DEFAULT 0,
-                error_count INTEGER NOT NULL DEFAULT 0,
-                total_input_tokens INTEGER NOT NULL DEFAULT 0,
-                total_output_tokens INTEGER NOT NULL DEFAULT 0
-            );
             "#,
         )?;
         Ok(())
@@ -682,7 +672,6 @@ mod tests {
         assert!(tables.contains(&"tool_usage".to_string()));
         assert!(tables.contains(&"anomalies".to_string()));
         assert!(tables.contains(&"model_profiles".to_string()));
-        assert!(tables.contains(&"sessions".to_string()));
     }
 
     #[test]

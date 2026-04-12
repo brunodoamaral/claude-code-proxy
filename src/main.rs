@@ -4,7 +4,6 @@ mod dashboard;
 mod explain;
 mod model_profile;
 mod proxy;
-#[allow(dead_code)] // Many methods are test infrastructure or scaffolded for future wiring
 mod stats;
 mod store;
 mod types;

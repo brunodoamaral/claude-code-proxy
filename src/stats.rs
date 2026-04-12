@@ -205,6 +205,7 @@ pub enum SourceKind {
 }
 
 impl SourceKind {
+    #[allow(dead_code)] // Used by ingestion checkpoint methods
     fn as_str(self) -> &'static str {
         match self {
             Self::ClaudeProject => "claude_project",
@@ -345,6 +346,7 @@ pub struct MergedSessionSummary {
     pub project_path: Option<String>,
 }
 
+#[allow(dead_code)] // Scaffolded for session deletion
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct SessionDeleteDbRowsByTable {
     pub request_bodies: u64,
@@ -354,6 +356,7 @@ pub struct SessionDeleteDbRowsByTable {
     pub local_events: u64,
 }
 
+#[allow(dead_code)] // Scaffolded for session deletion
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionDeleteDbOutcome {
     pub blocked_live: bool,
@@ -449,6 +452,7 @@ impl StatsStore {
         &self.db_path
     }
 
+    #[allow(dead_code)] // Scaffolded for future wiring
     pub fn claude_dir(&self) -> &Path {
         &self.claude_dir
     }
@@ -772,6 +776,7 @@ impl StatsStore {
         }
     }
 
+    #[allow(dead_code)] // Scaffolded for correlation wiring
     pub fn get_recent_requests_for_correlation(&self, limit: usize) -> Vec<RequestEntry> {
         self.get_entries(limit, 0, &EntryFilter::default(), None, None)
     }
@@ -1815,6 +1820,7 @@ impl StatsStore {
         }
     }
 
+    #[allow(dead_code)] // Scaffolded for local event ingestion
     pub fn upsert_local_event(&self, event: &LocalEvent) -> bool {
         let payload_json = match serde_json::to_string(&event.payload_json) {
             Ok(value) => value,
@@ -2010,10 +2016,12 @@ impl StatsStore {
         events
     }
 
+    #[allow(dead_code)] // Scaffolded for correlation wiring
     pub fn get_recent_local_events_for_correlation(&self, limit: usize) -> Vec<LocalEvent> {
         self.get_local_events(None, limit)
     }
 
+    #[allow(dead_code)] // Scaffolded for correlation wiring
     pub fn get_local_events_for_request_correlations(
         &self,
         correlations: &[RequestCorrelation],
@@ -2518,6 +2526,7 @@ impl StatsStore {
         }
     }
 
+    #[allow(dead_code)] // Scaffolded for session deletion
     pub fn delete_session_db_rows_with_live_guard(
         &self,
         session_id: &str,
@@ -3155,6 +3164,7 @@ impl StatsStore {
         out
     }
 
+    #[allow(dead_code)] // Scaffolded for ingestion wiring
     pub fn set_ingestion_checkpoint(&self, source_kind: SourceKind, checkpoint: &str) {
         let conn = self.db.lock();
         if let Err(err) = conn.execute(
@@ -3175,6 +3185,7 @@ impl StatsStore {
         }
     }
 
+    #[allow(dead_code)] // Scaffolded for ingestion wiring
     pub fn get_ingestion_checkpoint(&self, source_kind: SourceKind) -> Option<String> {
         let conn = self.db.lock();
         conn.query_row(
@@ -3406,6 +3417,7 @@ const MAX_SESSION_FILES_SCANNED: usize = 2_000;
 const MAX_SESSION_PROJECT_SCAN_DEPTH: usize = 8;
 const MAX_SESSION_ARTIFACT_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
+#[allow(dead_code)] // Scaffolded for session management
 fn query_session_live_state_in_tx(
     tx: &rusqlite::Transaction<'_>,
     session_id: &str,
@@ -3976,80 +3988,6 @@ pub struct EntryFilter {
     pub has_anomalies: Option<bool>,
     pub min_ttft_ms: Option<f64>,
     pub min_duration_ms: Option<f64>,
-}
-
-impl EntryFilter {
-    #[allow(dead_code)]
-    pub fn matches(&self, e: &RequestEntry) -> bool {
-        if let Some(ref search) = self.search {
-            let s = search.to_lowercase();
-            let haystack = format!(
-                "{} {} {} {} {}",
-                e.path,
-                e.model,
-                e.error.as_deref().unwrap_or(""),
-                e.status.code_str(),
-                e.session_id.as_deref().unwrap_or("")
-            )
-            .to_lowercase();
-            if !haystack.contains(&s) {
-                return false;
-            }
-        }
-
-        if let Some(ref status) = self.status {
-            let matches = match status.as_str() {
-                "success" => matches!(e.status, RequestStatus::Success(_)),
-                "error" => e.status.is_error(),
-                "4xx" => matches!(e.status, RequestStatus::ClientError(_)),
-                "5xx" => matches!(e.status, RequestStatus::ServerError(_)),
-                "timeout" => matches!(e.status, RequestStatus::Timeout),
-                "stall" => !e.stalls.is_empty(),
-                _ => true,
-            };
-            if !matches {
-                return false;
-            }
-        }
-
-        if let Some(ref model) = self.model {
-            if !e.model.contains(model) {
-                return false;
-            }
-        }
-
-        if let Some(ref sid) = self.session_id {
-            if e.session_id.as_deref() != Some(sid.as_str()) {
-                return false;
-            }
-        }
-
-        if self.session_id_null == Some(true) && e.session_id.is_some() {
-            return false;
-        }
-
-        if self.has_stalls == Some(true) && e.stalls.is_empty() {
-            return false;
-        }
-
-        if self.has_anomalies == Some(true) && e.anomalies.is_empty() {
-            return false;
-        }
-
-        if let Some(min_ttft) = self.min_ttft_ms {
-            if e.ttft_ms.unwrap_or(0.0) < min_ttft {
-                return false;
-            }
-        }
-
-        if let Some(min_dur) = self.min_duration_ms {
-            if e.duration_ms < min_dur {
-                return false;
-            }
-        }
-
-        true
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

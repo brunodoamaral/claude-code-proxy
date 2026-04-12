@@ -41,6 +41,7 @@ pub fn should_auto_tune(sample_count: u64) -> bool {
     sample_count >= 50 && sample_count.is_multiple_of(50)
 }
 
+#[allow(dead_code)] // Scaffolded for future model fingerprinting
 pub fn fingerprint_parameter_names() -> Vec<&'static str> {
     vec![
         "avg_ttft_ms", "median_ttft_ms", "p95_ttft_ms", "p99_ttft_ms",
