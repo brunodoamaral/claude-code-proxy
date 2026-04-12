@@ -1,7 +1,6 @@
 mod analyzer;
 mod correlation;
 mod dashboard;
-#[allow(dead_code)] // Wired by analyzer worker in upcoming integration
 mod explain;
 mod model_profile;
 mod proxy;
@@ -138,13 +137,14 @@ async fn main() {
 
     {
         let analyzer_store = v2_store.clone();
+        let stats_for_worker = store.clone();
         let worker_rules = analyzer_rules.clone();
         tokio::spawn(async move {
             let mut ticker = interval(Duration::from_secs(5));
             loop {
                 ticker.tick().await;
                 if let Err(err) =
-                    run_analyzer_tick_with_rules(analyzer_store.clone(), &worker_rules).await
+                    run_analyzer_tick_with_rules(analyzer_store.clone(), Some(stats_for_worker.clone()), &worker_rules).await
                 {
                     eprintln!("Analyzer tick failed: {err}");
                 }
@@ -229,11 +229,12 @@ pub async fn run_analyzer_tick(store: Arc<Store>) -> Result<(), rusqlite::Error>
         slow_ttft_threshold_ms: 3000.0,
         stall_threshold_s: 0.5,
     };
-    run_analyzer_tick_with_rules(store, &rules).await
+    run_analyzer_tick_with_rules(store, None, &rules).await
 }
 
 async fn run_analyzer_tick_with_rules(
     store: Arc<Store>,
+    stats_store: Option<Arc<StatsStore>>,
     rules: &AnalyzerRules,
 ) -> Result<(), rusqlite::Error> {
     let pending = store.list_unanalyzed_requests(200)?;
@@ -245,6 +246,76 @@ async fn run_analyzer_tick_with_rules(
         if model_profile::should_auto_tune(sample_count) {
             let observed = store.compute_model_observed_stats(&req.model)?;
             store.upsert_model_observed(&req.model, &observed)?;
+        }
+
+        // Generate explanations for requests with anomalies
+        if !anomalies.is_empty() {
+            if let Some(ref ss) = stats_store {
+                let expl = explain::generate_explanations(&req, &anomalies, &recent);
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let stats_explanations: Vec<stats::Explanation> = expl
+                    .iter()
+                    .map(|e| stats::Explanation {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        request_id: req.id.clone(),
+                        anomaly_kind: e.anomaly_kind.clone(),
+                        rank: e.rank as i64,
+                        confidence: 1.0,
+                        summary: e.summary.clone(),
+                        evidence_json: e.evidence_json.clone(),
+                        created_at_ms: now_ms,
+                    })
+                    .collect();
+                ss.replace_explanations_for_request(&req.id, &stats_explanations);
+            }
+        }
+
+        // Run correlation engine
+        if let Some(ref ss) = stats_store {
+            let events = ss.get_local_events(req.session_id.as_deref(), 100);
+            let req_time_ms = req.timestamp.timestamp_millis();
+            let event_tuples: Vec<(String, i64, Option<String>, String)> = events
+                .iter()
+                .filter(|e| (req_time_ms - e.event_time_ms).unsigned_abs() <= 60_000)
+                .map(|e| {
+                    (
+                        e.id.clone(),
+                        e.event_time_ms,
+                        e.session_hint.clone(),
+                        e.event_kind.clone(),
+                    )
+                })
+                .collect();
+
+            if !event_tuples.is_empty() {
+                let links = correlation::find_correlations(&req, &event_tuples);
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let stats_correlations: Vec<stats::RequestCorrelation> = links
+                    .iter()
+                    .filter_map(|l| {
+                        let local_event_id = l.local_event_id.clone()?;
+                        let link_type = match l.link_type.as_str() {
+                            "temporal" => stats::CorrelationLinkType::Temporal,
+                            "session" => stats::CorrelationLinkType::SessionHint,
+                            "config_drift" => stats::CorrelationLinkType::ConfigDrift,
+                            _ => stats::CorrelationLinkType::Temporal,
+                        };
+                        Some(stats::RequestCorrelation {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            request_id: req.id.clone(),
+                            local_event_id,
+                            link_type,
+                            confidence: l.confidence,
+                            reason: l.reason.clone(),
+                            created_at_ms: now_ms,
+                        })
+                    })
+                    .collect();
+
+                if !stats_correlations.is_empty() {
+                    ss.replace_correlations_for_request(&req.id, &stats_correlations);
+                }
+            }
         }
     }
 
