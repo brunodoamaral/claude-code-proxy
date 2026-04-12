@@ -820,6 +820,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dashboard_html_contains_required_v2_tabs() {
+        let html = include_str!("dashboard.html");
+        assert!(html.contains("data-tab=\"overview\""));
+        assert!(html.contains("data-tab=\"requests\""));
+        assert!(html.contains("data-tab=\"conformance\""));
+        assert!(html.contains("data-tab=\"anomalies\""));
+        assert!(html.contains("data-tab=\"sessions\""));
+    }
+
+    #[tokio::test]
     async fn dashboard_html_includes_correlation_panel() {
         let html = include_str!("dashboard.html");
         assert!(html.contains("id=\"correlation-panel\""));

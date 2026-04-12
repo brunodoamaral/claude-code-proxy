@@ -401,9 +401,9 @@
   <div class="tabs">
     <div class="tab active" data-tab="overview">Overview</div>
     <div class="tab" data-tab="requests">Requests</div>
-    <div class="tab" data-tab="sessions">Sessions</div>
+    <div class="tab" data-tab="conformance">Model Conformance</div>
     <div class="tab" data-tab="anomalies">Anomalies</div>
-    <div class="tab" data-tab="settings">Settings</div>
+    <div class="tab" data-tab="sessions">Sessions</div>
   </div>
 
   <!-- ═══ OVERVIEW TAB ═══ -->
@@ -567,6 +567,27 @@
         <div class="empty-state" style="padding:20px 12px">
           <h3 style="font-size:14px">No session selected</h3>
           <p>Pick a request with a session ID to load timeline overlays</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ CONFORMANCE TAB ═══ -->
+  <div class="tab-content" id="tab-conformance">
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Model Conformance Scoreboard</h3>
+        <div id="conformance-scoreboard">
+          <div class="empty-state" style="padding:20px 12px">
+            <h3 style="font-size:14px">No conformance scores yet</h3>
+            <p>Conformance analysis appears after request profiling data is available</p>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="font-size:12px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Conformance Notes</h3>
+        <div id="conformance-notes" style="color:var(--text-2);font-size:12px">
+          Compare capability, reliability, policy, and prompt-alignment dimensions across profiled models.
         </div>
       </div>
     </div>
@@ -2614,7 +2635,7 @@ function normalizeOverviewMode(mode) {
 }
 
 function normalizeTab(tab) {
-  return ['overview', 'requests', 'sessions', 'anomalies', 'settings'].includes(tab) ? tab : 'overview';
+  return ['overview', 'requests', 'conformance', 'anomalies', 'sessions'].includes(tab) ? tab : 'overview';
 }
 
 function normalizeRequestFilter(filter) {
