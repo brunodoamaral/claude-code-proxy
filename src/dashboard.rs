@@ -1,5 +1,3 @@
-use crate::session_admin;
-use crate::settings_admin::SettingsAdmin;
 use crate::stats::*;
 use axum::{
     extract::{
@@ -8,7 +6,7 @@ use axum::{
     },
     http::StatusCode,
     response::{Html, IntoResponse},
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
 use std::sync::Arc;
@@ -62,9 +60,6 @@ fn build_dashboard_app(store: Arc<StatsStore>) -> Router {
         .route("/api/timeline", get(api_timeline))
         .route("/api/session-graph", get(api_session_graph))
         .route("/api/session-details", get(api_session_details))
-        .route("/api/session", delete(api_delete_session))
-        .route("/api/settings/current", get(api_settings_current))
-        .route("/api/settings/apply", post(api_settings_apply))
         .route("/api/reset-memory", post(api_reset_memory))
         .route("/api/reset", post(api_reset))
         .route("/api/entry-body", get(api_entry_body))
@@ -357,97 +352,6 @@ async fn api_sessions_merged(State(store): State<Arc<StatsStore>>) -> impl IntoR
     axum::Json(versioned(store.get_merged_sessions()))
 }
 
-#[derive(serde::Serialize)]
-struct ApiSuccessEnvelope<T> {
-    ok: bool,
-    data: T,
-}
-
-#[derive(serde::Serialize)]
-struct ApiFailureEnvelope {
-    ok: bool,
-    error: ApiErrorBody,
-}
-
-#[derive(serde::Serialize)]
-struct ApiErrorBody {
-    code: String,
-    message: String,
-    details: serde_json::Value,
-}
-
-fn settings_admin_error_status(code: &str) -> StatusCode {
-    match code {
-        "invalid_payload" => StatusCode::BAD_REQUEST,
-        "not_found" => StatusCode::NOT_FOUND,
-        _ => StatusCode::INTERNAL_SERVER_ERROR,
-    }
-}
-
-fn settings_admin_error_response(
-    err: crate::settings_admin::SettingsAdminError,
-) -> axum::response::Response {
-    (
-        settings_admin_error_status(&err.code),
-        axum::Json(ApiFailureEnvelope {
-            ok: false,
-            error: ApiErrorBody {
-                code: err.code,
-                message: err.message,
-                details: serde_json::json!({}),
-            },
-        }),
-    )
-        .into_response()
-}
-
-async fn api_settings_current(State(store): State<Arc<StatsStore>>) -> impl IntoResponse {
-    let admin = SettingsAdmin::new(store);
-    match admin.get_current() {
-        Ok(current) => {
-            let current = current.unwrap_or(crate::settings_admin::SettingsCurrentResponse {
-                updated_at_ms: 0,
-                proxy_settings: crate::settings_admin::ProxySettingsDocument {
-                    raw_json: serde_json::Value::Object(Default::default()),
-                },
-                claude_settings: crate::settings_admin::ClaudeSettingsDocument {
-                    raw_json: serde_json::Value::Object(Default::default()),
-                },
-                db_file_mismatch: false,
-                file_recreated_from_db: false,
-            });
-
-            (
-                StatusCode::OK,
-                axum::Json(ApiSuccessEnvelope {
-                    ok: true,
-                    data: current,
-                }),
-            )
-                .into_response()
-        }
-        Err(err) => settings_admin_error_response(err),
-    }
-}
-
-async fn api_settings_apply(
-    State(store): State<Arc<StatsStore>>,
-    axum::Json(payload): axum::Json<serde_json::Value>,
-) -> impl IntoResponse {
-    let admin = SettingsAdmin::new(store);
-    match admin.apply_settings(payload) {
-        Ok(current) => (
-            StatusCode::OK,
-            axum::Json(ApiSuccessEnvelope {
-                ok: true,
-                data: current,
-            }),
-        )
-            .into_response(),
-        Err(err) => settings_admin_error_response(err),
-    }
-}
-
 #[derive(serde::Deserialize)]
 struct CorrelationsQuery {
     request_id: String,
@@ -586,11 +490,6 @@ struct SessionDetailsQuery {
     include_full_text: Option<bool>,
 }
 
-#[derive(serde::Deserialize)]
-struct DeleteSessionRequest {
-    session_id: String,
-}
-
 fn build_unknown_session_details(store: &StatsStore, limit: usize) -> SessionDetailsResponse {
     let cap = limit.max(1);
     let null_filter = EntryFilter {
@@ -703,40 +602,6 @@ async fn api_session_details(
     }
 
     (StatusCode::OK, Json(versioned(details))).into_response()
-}
-
-async fn api_delete_session(
-    State(store): State<Arc<StatsStore>>,
-    Json(payload): Json<DeleteSessionRequest>,
-) -> impl IntoResponse {
-    let session_id = payload.session_id.trim();
-    if session_id.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": "session_id is required"})),
-        )
-            .into_response();
-    }
-
-    match session_admin::delete_session(&store, session_id) {
-        Ok(result) if result.blocked_live => {
-            (StatusCode::CONFLICT, Json(serde_json::json!(result))).into_response()
-        }
-        Ok(result) if result.not_found => {
-            (StatusCode::NOT_FOUND, Json(serde_json::json!(result))).into_response()
-        }
-        Ok(result) => (StatusCode::OK, Json(serde_json::json!(result))).into_response(),
-        Err(err) if err.contains("session_id is required") => (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": err})),
-        )
-            .into_response(),
-        Err(err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": err})),
-        )
-            .into_response(),
-    }
 }
 
 #[derive(serde::Deserialize)]
@@ -1050,88 +915,6 @@ mod tests {
         assert!(!html.contains("id=\"settings-keep-db-snapshot-btn\""));
         assert!(!html.contains("keepDiskAndApplyNow"));
         assert!(!html.contains("keepDbSnapshotInEditor"));
-    }
-
-    #[tokio::test]
-    async fn settings_current_returns_disk_only_no_mismatch() {
-        let root = std::env::temp_dir().join(format!(
-            "claude-proxy-dashboard-disk-only-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let storage_dir = root.join("storage");
-        let claude_dir = root.join("claude");
-        std::fs::create_dir_all(&storage_dir).unwrap();
-        std::fs::create_dir_all(&claude_dir).unwrap();
-
-        let store = Arc::new(StatsStore::new(
-            100,
-            storage_dir,
-            20.0,
-            8.0,
-            2_097_152,
-            claude_dir.clone(),
-        ));
-        let admin = crate::settings_admin::SettingsAdmin::new(store);
-
-        // Apply settings — writes to disk only
-        admin
-            .apply_settings(serde_json::json!({"theme": "dark"}))
-            .unwrap();
-
-        let current = admin.get_current().unwrap().expect("should have current");
-        assert!(!current.db_file_mismatch);
-        assert!(!current.file_recreated_from_db);
-        assert_eq!(
-            current.claude_settings.raw_json,
-            serde_json::json!({"theme": "dark"})
-        );
-
-        // Mutate disk directly — get_current should return disk content, no mismatch
-        let settings_path = claude_dir.join("settings.json");
-        std::fs::write(
-            &settings_path,
-            serde_json::to_string_pretty(&serde_json::json!({"theme": "light"})).unwrap(),
-        )
-        .unwrap();
-
-        let current = admin.get_current().unwrap().expect("should have current");
-        assert!(!current.db_file_mismatch);
-        assert_eq!(
-            current.claude_settings.raw_json,
-            serde_json::json!({"theme": "light"})
-        );
-    }
-
-    #[tokio::test]
-    async fn settings_current_returns_none_when_file_missing() {
-        let root = std::env::temp_dir().join(format!(
-            "claude-proxy-dashboard-missing-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let storage_dir = root.join("storage");
-        let claude_dir = root.join("claude");
-        std::fs::create_dir_all(&storage_dir).unwrap();
-        std::fs::create_dir_all(&claude_dir).unwrap();
-
-        let store = Arc::new(StatsStore::new(
-            100,
-            storage_dir,
-            20.0,
-            8.0,
-            2_097_152,
-            claude_dir.clone(),
-        ));
-        let admin = crate::settings_admin::SettingsAdmin::new(store);
-
-        // Apply then delete — should return None, not recreate from DB
-        admin
-            .apply_settings(serde_json::json!({"model": "opus"}))
-            .unwrap();
-        let settings_path = claude_dir.join("settings.json");
-        std::fs::remove_file(&settings_path).unwrap();
-
-        let result = admin.get_current().unwrap();
-        assert!(result.is_none(), "should return None when file is missing");
     }
 
     #[tokio::test]
@@ -1451,160 +1234,6 @@ mod tests {
             .get("requests")
             .and_then(|v| v.as_array())
             .is_some_and(|rows| !rows.is_empty()));
-
-        let _ = std::fs::remove_dir_all(&log_dir);
-    }
-
-    #[tokio::test]
-    async fn delete_session_endpoint_live_session_returns_conflict() {
-        let log_dir = std::env::temp_dir().join(format!(
-            "claude-proxy-dashboard-delete-session-live-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let claude_dir = std::env::temp_dir().join(format!(
-            "claude-proxy-dashboard-delete-session-live-claude-{}",
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&log_dir).unwrap();
-        std::fs::create_dir_all(&claude_dir).unwrap();
-
-        let store = Arc::new(StatsStore::new(
-            10,
-            log_dir.clone(),
-            20.0,
-            8.0,
-            2_097_152,
-            claude_dir.clone(),
-        ));
-        let mut pending = sample_entry();
-        pending.id = "req-live-session".into();
-        pending.session_id = Some("session-live".into());
-        pending.status = RequestStatus::Pending;
-        store.add_entry(pending);
-
-        let app = build_dashboard_app(store);
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method(Method::DELETE)
-                    .uri("/api/session")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"session_id":"session-live"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::CONFLICT);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(
-            payload.get("blocked_live").and_then(|v| v.as_bool()),
-            Some(true)
-        );
-        assert_eq!(
-            payload.get("session_id").and_then(|v| v.as_str()),
-            Some("session-live")
-        );
-
-        let _ = std::fs::remove_dir_all(&log_dir);
-        let _ = std::fs::remove_dir_all(&claude_dir);
-    }
-
-    #[tokio::test]
-    async fn delete_session_endpoint_missing_session_returns_not_found_result() {
-        let log_dir = std::env::temp_dir().join(format!(
-            "claude-proxy-dashboard-delete-session-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let claude_dir = std::env::temp_dir().join(format!(
-            "claude-proxy-dashboard-delete-session-claude-{}",
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&log_dir).unwrap();
-        std::fs::create_dir_all(&claude_dir).unwrap();
-
-        let store = Arc::new(StatsStore::new(
-            10,
-            log_dir.clone(),
-            20.0,
-            8.0,
-            2_097_152,
-            claude_dir.clone(),
-        ));
-        let app = build_dashboard_app(store);
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method(Method::DELETE)
-                    .uri("/api/session")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"session_id":"missing-session"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(
-            payload.get("not_found").and_then(|v| v.as_bool()),
-            Some(true)
-        );
-        assert_eq!(
-            payload.get("session_id").and_then(|v| v.as_str()),
-            Some("missing-session")
-        );
-
-        let _ = std::fs::remove_dir_all(&log_dir);
-        let _ = std::fs::remove_dir_all(&claude_dir);
-    }
-
-    #[tokio::test]
-    async fn delete_session_endpoint_empty_session_id_returns_bad_request() {
-        let log_dir = std::env::temp_dir().join(format!(
-            "claude-proxy-dashboard-delete-session-empty-{}",
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&log_dir).unwrap();
-
-        let store = Arc::new(StatsStore::new(
-            10,
-            log_dir.clone(),
-            20.0,
-            8.0,
-            2_097_152,
-            log_dir.clone(),
-        ));
-        let app = build_dashboard_app(store);
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method(Method::DELETE)
-                    .uri("/api/session")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"session_id":""}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(
-            payload.get("error").and_then(|v| v.as_str()),
-            Some("session_id is required")
-        );
 
         let _ = std::fs::remove_dir_all(&log_dir);
     }

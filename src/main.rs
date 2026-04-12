@@ -3,8 +3,6 @@ mod correlation;
 mod dashboard;
 mod model_profile;
 mod proxy;
-mod session_admin;
-mod settings_admin;
 mod stats;
 mod store;
 mod types;
