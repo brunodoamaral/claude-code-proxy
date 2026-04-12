@@ -45,8 +45,16 @@ pub async fn run_dashboard(
         .map_err(|err| format!("Dashboard server stopped unexpectedly: {err}"))
 }
 
-fn build_dashboard_app(stats: Arc<StatsStore>, store: Arc<Store>, model_config: Option<Arc<crate::model_profile::ModelConfig>>) -> Router {
-    let state = DashboardState { stats, store, model_config };
+fn build_dashboard_app(
+    stats: Arc<StatsStore>,
+    store: Arc<Store>,
+    model_config: Option<Arc<crate::model_profile::ModelConfig>>,
+) -> Router {
+    let state = DashboardState {
+        stats,
+        store,
+        model_config,
+    };
     Router::new()
         .route("/", get(serve_dashboard))
         .route("/api/health", get(api_health))
@@ -216,7 +224,9 @@ async fn api_model_comparison(
         if let (Some(obs_obj), Some(exp_obj)) = (obs.as_object(), exp.as_object()) {
             let mut devs = serde_json::Map::new();
             for (key, exp_val) in exp_obj {
-                if let (Some(e), Some(o)) = (exp_val.as_f64(), obs_obj.get(key).and_then(|v| v.as_f64())) {
+                if let (Some(e), Some(o)) =
+                    (exp_val.as_f64(), obs_obj.get(key).and_then(|v| v.as_f64()))
+                {
                     if e != 0.0 {
                         devs.insert(key.clone(), serde_json::json!((o - e) / e * 100.0));
                     }
@@ -1036,8 +1046,8 @@ mod tests {
     async fn dashboard_html_settings_tab_uses_single_editor_panel() {
         let html = super::assemble_dashboard_html();
         assert!(html.contains("id=\"settings-editor-panel\""));
-        assert!(!html.contains("id=\"settings-history-panel\""));
-        assert!(!html.contains("id=\"settings-history-list\""));
+        assert!(html.contains("id=\"settings-history-panel\""));
+        assert!(html.contains("id=\"settings-history-btn\""));
         assert!(!html.contains("id=\"settings-quick-tags-input\""));
     }
 
@@ -1061,10 +1071,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dashboard_html_settings_history_endpoints_and_handlers_removed() {
+    async fn dashboard_html_settings_history_wired() {
         let html = super::assemble_dashboard_html();
-        assert!(!html.contains("loadSettingsHistory()"));
-        assert!(!html.contains("/api/settings/history"));
+        assert!(html.contains("loadSettingsHistory"));
+        assert!(html.contains("/api/settings-history"));
         assert!(!html.contains("quick_tags"));
         assert!(!html.contains("function clearAllSettingsHistory()"));
     }

@@ -203,7 +203,11 @@ async fn main() {
                 {
                     eprintln!("Analyzer tick failed: {err}");
                 }
-                check_settings_changed(&stats_for_worker, &worker_claude_root, &mut last_settings_hash);
+                check_settings_changed(
+                    &stats_for_worker,
+                    &worker_claude_root,
+                    &mut last_settings_hash,
+                );
             }
         });
     }
@@ -223,7 +227,9 @@ async fn main() {
     let model_config_dash = model_config.clone();
     let dash_port = args.dashboard_port;
     tokio::spawn(async move {
-        if let Err(err) = dashboard::run_dashboard(store_dash, v2_dash, model_config_dash, dash_port).await {
+        if let Err(err) =
+            dashboard::run_dashboard(store_dash, v2_dash, model_config_dash, dash_port).await
+        {
             eprintln!("Dashboard startup failed: {err}");
         }
     });
