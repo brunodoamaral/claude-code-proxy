@@ -18,12 +18,12 @@ main() starts:
 ## Proxy Request Flow
 
 ```
-Request → Bind :8000 → Parse metadata (model, stream, session_id)
+Request → Bind :8000 → Parse metadata (model, stream, session_id from body + X-Claude-Code-Session-Id header)
 → Forward headers to upstream → Send request → Handle response:
 
-1. ERROR (status ≥ 400): Read body, summarize, record, store
-2. SSE STREAMING: Spawn task, detect stalls, extract usage, track unknown events
-3. REGULAR JSON: Read body, parse JSON for usage, record, store
+1. ERROR (status ≥ 400): Read body, summarize, record to both stores
+2. SSE STREAMING: Spawn task, detect stalls, extract usage, track unknown events, write to both stores
+3. REGULAR JSON: Read body, parse JSON for usage, record to both stores
 
 → Response back to client
 ```
@@ -141,7 +141,7 @@ Result: Single HTML response served at `GET /`.
 
 5 tabs (all fully functional):
 - **Overview** — health score, stat cards, timeseries charts, model/error breakdowns
-- **Requests** — sortable table, search, filters, modal with body viewer, correlations, explanations, tool usage
+- **Requests** — sortable table, search, filters, modal with body viewer, explanations, tool usage
 - **Model Conformance** — model scoreboard with request counts, avg TTFT, error rates, expected vs observed baselines with deviation colors, profiling status
 - **Anomalies** — severity-badged anomaly feed with click-to-focus request filtering
 - **Sessions** — split layout browser with session list, detail panel, timeline, conversation preview
@@ -161,8 +161,8 @@ Result: Single HTML response served at `GET /`.
 | `stats.rs` | ~7,350 | Stats store, live stats, session aggregation, DB schema |
 | `dashboard.rs` | ~2,300 | Axum routes, REST API, WebSocket, HTML assembly, dual-store state |
 | `store.rs` | ~1,000 | V2 SQLite store, FTS5, CRUD, tool usage, anomaly lookup |
-| `proxy.rs` | ~825 | HTTP proxy, SSE streaming, request forwarding, tool extraction |
-| `main.rs` | ~580 | CLI, runtime orchestration, analyzer worker, correlation + explanation integration, auto-configure, graceful shutdown |
+| `proxy.rs` | ~870 | HTTP proxy, SSE streaming, request forwarding, tool extraction, V2 store wiring |
+| `main.rs` | ~580 | CLI, runtime orchestration, analyzer worker, explanation integration, auto-configure, graceful shutdown |
 | `analyzer.rs` | ~383 | All 11 anomaly detection rules (SlowTtft, Stall, Timeout, ApiError, ClientError, RateLimited, Overload, HighTokens, CacheMiss, InterruptedStream, MaxTokensHit) |
 | `explain.rs` | ~240 | Rule-based explanation generator for anomalies |
 | `correlation.rs` | ~218 | Correlation engine: temporal, session, config-drift linking |

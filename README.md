@@ -9,8 +9,7 @@ Sits transparently between Claude Code and the Anthropic API. Logs every request
 - **Real-time anomaly detection** — 11 detection rules: slow TTFT, stream stalls, timeouts, API/client errors, rate limiting, overload, high tokens, cache misses, interrupted streams, max tokens hit
 - **Model profiling** — automatic behavior fingerprinting, auto-tuning at 50-sample intervals
 - **Explanation engine** — human-readable explanations for every detected anomaly with evidence
-- **Correlation engine** — links API anomalies to local events (temporal, session, config-drift matching)
-- **Session tracking** — timelines, conversation drill-down, and session graphs per Claude Code session
+- **Session tracking** — automatic session identification via `X-Claude-Code-Session-Id` header, timelines, conversation drill-down, and session graphs
 - **Model conformance** — expected vs observed baselines with deviation scoring (load via `--model-config`)
 - **Settings history** — automatic tracking of `~/.claude/settings.json` changes with history viewer
 - **Forward-compat monitoring** — detects unknown SSE events, stop reasons, and API fields as Anthropic evolves the protocol
@@ -86,7 +85,7 @@ Start using Claude Code normally — everything shows up in the dashboard.
 5-tab real-time dashboard:
 
 - **Overview** — health score (0-100), stat cards, TTFT/error timeseries, model and error breakdowns
-- **Requests** — sortable table with search, filters (error/5xx/4xx/timeout/stall), session filter, request detail modal with body viewer, correlation links, session timeline
+- **Requests** — sortable table with search, filters (error/5xx/4xx/timeout/stall), session filter, request detail modal with body viewer, explanations, session timeline
 - **Model Conformance** — model scoreboard with request counts, avg TTFT, error rates, expected vs observed baselines with deviation colors (green ≤20%, yellow 20-50%, red >50%), profiling status (populates as data accumulates)
 - **Anomalies** — severity-badged anomaly feed with explanations and click-to-focus request filtering
 - **Sessions** — split layout browser with session list, detail panel (metrics, timeline, conversation preview)
@@ -156,7 +155,6 @@ If the proxy crashes without restoring, the backup file remains — you can manu
 - `GET /api/timeline?session_id=` — chronological session timeline
 
 ### Intelligence
-- `GET /api/correlations?request_id=` — correlation links
 - `GET /api/explanations?request_id=` — ranked explanations
 
 ### Settings History
@@ -169,7 +167,7 @@ If the proxy crashes without restoring, the backup file remains — you can manu
 ## Persistence
 
 Two SQLite databases in the data directory (default: `~/.claude/api-logs/`):
-- `proxy.db` — stats store (requests, bodies, events, correlations)
+- `proxy.db` — stats store (requests, bodies, events, explanations)
 - `proxy-v2.db` — v2 store (requests, FTS search, anomalies, model profiles, sessions)
 
 ## Performance
