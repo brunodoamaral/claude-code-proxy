@@ -340,6 +340,53 @@ async function resetSettingsEditor() {
   await loadSettingsCurrent();
 }
 
+async function loadSettingsHistory() {
+    const panel = document.getElementById('settings-history-panel');
+    if (!panel) return;
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    if (panel.style.display === 'none') return;
+
+    try {
+        const resp = await fetch('/api/settings-history');
+        const items = await resp.json();
+        if (items.length === 0) {
+            panel.innerHTML = '<div style="padding:8px 12px;color:var(--text-2);font-size:12px">No history yet.</div>';
+            return;
+        }
+        let html = '';
+        for (const item of items) {
+            const date = new Date(item.saved_at_ms).toLocaleString();
+            html += '<div class="settings-history-entry" data-id="' + esc(item.id) + '" '
+                + 'style="padding:6px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px">'
+                + '<span>' + esc(date) + '</span> '
+                + '<span style="color:var(--text-2)">' + esc(item.source) + '</span>'
+                + '</div>';
+        }
+        panel.innerHTML = html;
+        panel.querySelectorAll('.settings-history-entry').forEach(function(el) {
+            el.addEventListener('click', function() { loadSettingsHistoryItem(el.dataset.id); });
+        });
+    } catch (err) {
+        panel.innerHTML = '<div style="padding:8px 12px;color:var(--red);font-size:12px">Error: ' + esc(err.message) + '</div>';
+    }
+}
+
+async function loadSettingsHistoryItem(id) {
+    try {
+        const resp = await fetch('/api/settings-history/' + encodeURIComponent(id));
+        const item = await resp.json();
+        if (item.settings_json) {
+            const editor = document.getElementById('settings-editor');
+            if (editor) {
+                editor.value = JSON.stringify(JSON.parse(item.settings_json), null, 2);
+                renderSettingsEditor();
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load settings history item:', err);
+    }
+}
+
 // ─── DOMContentLoaded ───
 document.addEventListener('DOMContentLoaded', () => {
   initCharts();
@@ -432,6 +479,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const settingsEditor = document.getElementById('settings-claude-json');
   const settingsErrorBanner = document.getElementById('settings-error-banner');
   document.getElementById('settings-apply-btn')?.addEventListener('click', applySettings);
+  const historyBtn = document.getElementById('settings-history-btn');
+  if (historyBtn) historyBtn.addEventListener('click', loadSettingsHistory);
   document.getElementById('settings-format-btn')?.addEventListener('click', formatSettingsEditor);
   document.getElementById('settings-reset-btn')?.addEventListener('click', resetSettingsEditor);
   settingsEditor?.addEventListener('input', () => {
