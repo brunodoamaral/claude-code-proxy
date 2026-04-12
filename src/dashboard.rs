@@ -827,6 +827,16 @@ mod tests {
         assert!(html.contains("data-tab=\"conformance\""));
         assert!(html.contains("data-tab=\"anomalies\""));
         assert!(html.contains("data-tab=\"sessions\""));
+        assert!(html.contains("data-tab=\"settings\""));
+    }
+
+    #[tokio::test]
+    async fn dashboard_html_settings_tab_is_in_normalize_tab_allowlist() {
+        let html = include_str!("dashboard.html");
+        assert!(
+            html.contains("['overview', 'requests', 'conformance', 'anomalies', 'sessions', 'settings'].includes(tab)"),
+            "normalizeTab allowlist must include settings when settings tab/panel exists"
+        );
     }
 
     #[tokio::test]

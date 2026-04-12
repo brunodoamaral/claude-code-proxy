@@ -404,6 +404,7 @@
     <div class="tab" data-tab="conformance">Model Conformance</div>
     <div class="tab" data-tab="anomalies">Anomalies</div>
     <div class="tab" data-tab="sessions">Sessions</div>
+    <div class="tab" data-tab="settings">Settings</div>
   </div>
 
   <!-- ═══ OVERVIEW TAB ═══ -->
@@ -2635,7 +2636,7 @@ function normalizeOverviewMode(mode) {
 }
 
 function normalizeTab(tab) {
-  return ['overview', 'requests', 'conformance', 'anomalies', 'sessions'].includes(tab) ? tab : 'overview';
+  return ['overview', 'requests', 'conformance', 'anomalies', 'sessions', 'settings'].includes(tab) ? tab : 'overview';
 }
 
 function normalizeRequestFilter(filter) {
