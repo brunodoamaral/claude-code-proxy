@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 pub struct Store {
     db: Arc<Mutex<Connection>>,
+    path: std::path::PathBuf,
 }
 
 impl Store {
@@ -33,6 +34,7 @@ impl Store {
 
         let store = Self {
             db: Arc::new(Mutex::new(conn)),
+            path: path.to_path_buf(),
         };
         store.initialize_schema()?;
         Ok(store)
@@ -756,19 +758,39 @@ impl Store {
 
     /// Delete all data from the v2 store (requests, bodies, tool_usage, anomalies, model_profiles).
     /// Returns per-table deletion counts for diagnostics.
+    /// If the database is corrupted, deletes the file and reinitializes.
     pub fn clear_all(&self) -> Result<Vec<(&'static str, usize)>, rusqlite::Error> {
-        let db = self.db.lock();
-        // Order matters: child tables with FK references first.
-        // Note: request_bodies_fts is a content-sync FTS5 table — it is
-        // automatically updated by the AFTER DELETE trigger on request_bodies,
-        // so we must NOT delete from it directly.
         let tables = ["request_bodies", "tool_usage", "anomalies", "model_profiles", "requests"];
-        let mut counts = Vec::new();
-        for table in &tables {
-            let deleted = db.execute(&format!("DELETE FROM {table}"), [])?;
-            counts.push((*table, deleted));
+
+        // Try normal delete first
+        {
+            let db = self.db.lock();
+            let result: Result<Vec<(&str, usize)>, _> = tables
+                .iter()
+                .map(|table| {
+                    db.execute(&format!("DELETE FROM {table}"), [])
+                        .map(|n| (*table, n))
+                })
+                .collect();
+
+            if let Ok(counts) = result {
+                return Ok(counts);
+            }
         }
-        Ok(counts)
+
+        // Normal delete failed (likely corruption) — nuke and recreate
+        eprintln!("  [recovery] Normal clear failed, recreating v2 database at {:?}", self.path);
+        {
+            let mut db = self.db.lock();
+            // Close old connection by replacing it
+            let _ = std::fs::remove_file(&self.path);
+            let conn = Connection::open(&self.path)?;
+            conn.pragma_update(None, "foreign_keys", "ON")?;
+            *db = conn;
+        }
+        self.initialize_schema()?;
+        eprintln!("  [recovery] v2 database recreated successfully");
+        Ok(tables.iter().map(|t| (*t, 0)).collect())
     }
 
     pub fn list_all_model_stats(&self) -> Result<Vec<serde_json::Value>, rusqlite::Error> {
