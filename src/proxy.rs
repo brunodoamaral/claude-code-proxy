@@ -194,6 +194,10 @@ async fn proxy_handler(
             Err(e) => {
                 entry.duration_ms = start.elapsed().as_secs_f64() * 1000.0;
                 entry.error = Some(format!("Failed to read error response: {e}"));
+                if let Some(ref v2) = state.v2_store {
+                    let record = entry_to_request_record(&entry);
+                    let _ = v2.add_request(&record);
+                }
                 state.store.add_entry(entry);
                 return axum::http::Response::builder()
                     .status(502)
@@ -207,6 +211,16 @@ async fn proxy_handler(
         entry.error = Some(summarize_error_body(&upstream_headers, &resp_body));
 
         let entry_id_for_body = entry.id.clone();
+        if let Some(ref v2) = state.v2_store {
+            let record = entry_to_request_record(&entry);
+            let _ = v2.add_request(&record);
+            let _ = v2.write_bodies(
+                &entry_id_for_body,
+                &String::from_utf8_lossy(&body_bytes),
+                &String::from_utf8_lossy(&resp_body),
+                false,
+            );
+        }
         state.store.add_entry(entry);
         state.store.write_body(
             &entry_id_for_body,

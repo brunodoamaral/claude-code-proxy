@@ -209,7 +209,17 @@ async fn api_model_comparison(
     Path(name): Path<String>,
     State(state): State<DashboardState>,
 ) -> impl IntoResponse {
-    let observed = state.store.get_model_profile_observed(&name).ok().flatten();
+    // Compute observed stats live from requests table (not stale model_profiles)
+    let observed = match state.store.compute_model_observed_stats(&name) {
+        Ok(obs) => {
+            if obs.get("sample_count").and_then(|v| v.as_i64()).unwrap_or(0) == 0 {
+                None
+            } else {
+                Some(obs)
+            }
+        }
+        Err(_) => state.store.get_model_profile_observed(&name).ok().flatten(),
+    };
 
     let (behavior_class, expected) = if let Some(ref config) = state.model_config {
         let class = crate::model_profile::resolve_behavior_class(config, &name);
@@ -219,24 +229,108 @@ async fn api_model_comparison(
         (None, None)
     };
 
-    let deviations = if let (Some(ref obs), Some(ref exp)) = (&observed, &expected) {
+    // Metric metadata: (key, category, display_name, unit, lower_is_better)
+    let metric_meta: Vec<(&str, &str, &str, &str, bool)> = vec![
+        // Timing
+        ("avg_ttft_ms", "Timing", "Avg TTFT", "ms", true),
+        ("median_ttft_ms", "Timing", "Median TTFT", "ms", true),
+        ("p95_ttft_ms", "Timing", "P95 TTFT", "ms", true),
+        ("p99_ttft_ms", "Timing", "P99 TTFT", "ms", true),
+        ("min_ttft_ms", "Timing", "Min TTFT", "ms", true),
+        ("max_ttft_ms", "Timing", "Max TTFT", "ms", true),
+        ("ttft_stddev_ms", "Timing", "TTFT Std Dev", "ms", true),
+        ("avg_duration_ms", "Timing", "Avg Duration", "ms", true),
+        // Tokens
+        ("avg_input_tokens", "Tokens", "Avg Input Tokens", "tokens", false),
+        ("avg_output_tokens", "Tokens", "Avg Output Tokens", "tokens", false),
+        ("avg_thinking_tokens", "Tokens", "Avg Thinking Tokens", "tokens", false),
+        ("output_input_ratio", "Tokens", "Output/Input Ratio", "ratio", false),
+        ("total_tokens_per_request", "Tokens", "Total Tokens/Request", "tokens", false),
+        ("thinking_frequency", "Tokens", "Thinking Frequency", "%", false),
+        ("thinking_token_ratio", "Tokens", "Thinking Token Ratio", "ratio", false),
+        // Cache
+        ("cache_hit_rate", "Cache", "Cache Hit Rate", "%", false),
+        ("avg_cache_read_tokens", "Cache", "Avg Cache Read Tokens", "tokens", false),
+        ("cache_creation_rate", "Cache", "Cache Creation Rate", "%", false),
+        // Errors
+        ("error_rate", "Errors", "Error Rate", "%", true),
+        ("rate_limit_rate", "Errors", "Rate Limit Rate", "%", true),
+        ("overload_rate", "Errors", "Overload Rate", "%", true),
+        ("server_error_rate", "Errors", "Server Error Rate", "%", true),
+        // Streaming
+        ("stall_rate", "Streaming", "Stall Rate", "%", true),
+        ("end_turn_rate", "Streaming", "End Turn Rate", "%", false),
+        ("max_tokens_hit_rate", "Streaming", "Max Tokens Hit Rate", "%", true),
+        ("stream_completion_rate", "Streaming", "Stream Completion Rate", "%", false),
+    ];
+
+    let (deviations, metrics, deviation_summary) = if let (Some(ref obs), Some(ref exp)) = (&observed, &expected) {
         if let (Some(obs_obj), Some(exp_obj)) = (obs.as_object(), exp.as_object()) {
             let mut devs = serde_json::Map::new();
-            for (key, exp_val) in exp_obj {
-                if let (Some(e), Some(o)) =
-                    (exp_val.as_f64(), obs_obj.get(key).and_then(|v| v.as_f64()))
-                {
-                    if e != 0.0 {
-                        devs.insert(key.clone(), serde_json::json!((o - e) / e * 100.0));
-                    }
+            let mut metric_details = Vec::new();
+            let mut abs_devs = Vec::new();
+
+            for (key, category, display_name, unit, lower_is_better) in &metric_meta {
+                if let (Some(e), Some(o)) = (
+                    exp_obj.get(*key).and_then(|v| v.as_f64()),
+                    obs_obj.get(*key).and_then(|v| v.as_f64()),
+                ) {
+                    let dev_pct = if e != 0.0 { (o - e) / e * 100.0 } else { 0.0 };
+                    let abs_dev = dev_pct.abs();
+                    let status = if abs_dev <= 20.0 { "healthy" }
+                        else if abs_dev <= 50.0 { "warning" }
+                        else { "critical" };
+
+                    // For lower-is-better metrics (like latency, error rate):
+                    //   negative deviation = good (faster/fewer errors)
+                    // For higher-is-better metrics (like cache hit rate):
+                    //   positive deviation = good
+                    let is_favorable = if *lower_is_better { dev_pct <= 0.0 } else { dev_pct >= 0.0 };
+
+                    devs.insert(key.to_string(), serde_json::json!(dev_pct));
+                    abs_devs.push(abs_dev);
+
+                    metric_details.push(serde_json::json!({
+                        "key": key,
+                        "name": display_name,
+                        "category": category,
+                        "unit": unit,
+                        "observed": (o * 1000.0).round() / 1000.0,
+                        "expected": (e * 1000.0).round() / 1000.0,
+                        "deviation_pct": (dev_pct * 10.0).round() / 10.0,
+                        "status": status,
+                        "favorable": is_favorable,
+                        "lower_is_better": lower_is_better,
+                    }));
                 }
             }
-            Some(serde_json::Value::Object(devs))
+
+            let summary = if abs_devs.is_empty() {
+                None
+            } else {
+                let avg = abs_devs.iter().sum::<f64>() / abs_devs.len() as f64;
+                let critical_count = abs_devs.iter().filter(|d| **d > 50.0).count();
+                let warning_count = abs_devs.iter().filter(|d| **d > 20.0 && **d <= 50.0).count();
+                let healthy_count = abs_devs.iter().filter(|d| **d <= 20.0).count();
+                let overall_status = if critical_count > 0 { "critical" }
+                    else if warning_count > 0 { "warning" }
+                    else { "healthy" };
+                Some(serde_json::json!({
+                    "avg_absolute_deviation": (avg * 10.0).round() / 10.0,
+                    "overall_status": overall_status,
+                    "healthy_count": healthy_count,
+                    "warning_count": warning_count,
+                    "critical_count": critical_count,
+                    "total_metrics": abs_devs.len(),
+                }))
+            };
+
+            (Some(serde_json::Value::Object(devs)), Some(metric_details), summary)
         } else {
-            None
+            (None, None, None)
         }
     } else {
-        None
+        (None, None, None)
     };
 
     Json(serde_json::json!({
@@ -245,6 +339,8 @@ async fn api_model_comparison(
         "observed": observed,
         "expected": expected,
         "deviations": deviations,
+        "metrics": metrics,
+        "deviation_summary": deviation_summary,
     }))
 }
 

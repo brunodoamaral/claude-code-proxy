@@ -472,15 +472,162 @@ impl Store {
     ) -> Result<serde_json::Value, rusqlite::Error> {
         let db = self.db.lock();
 
-        let (sample_count, avg_ttft_ms): (i64, Option<f64>) = db.query_row(
-            "SELECT COUNT(*), AVG(ttft_ms) FROM requests WHERE model = ?1",
+        // Aggregate query for counts, averages, and rates
+        let row_data: (
+            i64,            // sample_count
+            Option<f64>,    // avg_ttft_ms
+            Option<f64>,    // min_ttft_ms
+            Option<f64>,    // max_ttft_ms
+            Option<f64>,    // avg_duration_ms
+            Option<f64>,    // avg_input_tokens
+            Option<f64>,    // avg_output_tokens
+            Option<f64>,    // avg_thinking_tokens
+            i64,            // thinking_count (non-null thinking_tokens > 0)
+            Option<f64>,    // avg_cache_read_tokens
+            i64,            // cache_read_count (non-null cache_read > 0)
+            i64,            // cache_creation_count (non-null cache_creation > 0)
+            i64,            // error_count (status >= 400)
+            i64,            // rate_limit_count (status = 429)
+            i64,            // overload_count (status = 529)
+            i64,            // server_error_count (status 500-599)
+            i64,            // stall_count (stall_count > 0)
+            i64,            // end_turn_count
+            i64,            // max_tokens_count
+            i64,            // stream_count
+            i64,            // interrupted_stream_count
+        ) = db.query_row(
+            "SELECT
+                COUNT(*),
+                AVG(ttft_ms),
+                MIN(ttft_ms),
+                MAX(ttft_ms),
+                AVG(duration_ms),
+                AVG(CAST(input_tokens AS REAL)),
+                AVG(CAST(output_tokens AS REAL)),
+                AVG(CASE WHEN thinking_tokens > 0 THEN CAST(thinking_tokens AS REAL) END),
+                SUM(CASE WHEN thinking_tokens > 0 THEN 1 ELSE 0 END),
+                AVG(CASE WHEN cache_read_tokens > 0 THEN CAST(cache_read_tokens AS REAL) END),
+                SUM(CASE WHEN cache_read_tokens > 0 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN cache_creation_tokens > 0 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status_code = 429 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status_code = 529 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status_code >= 500 AND status_code < 600 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN stall_count > 0 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN stop_reason = 'end_turn' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN stop_reason = 'max_tokens' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN stream = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN stream = 1 AND stop_reason IS NULL AND error_summary IS NOT NULL THEN 1 ELSE 0 END)
+            FROM requests WHERE model = ?1",
             params![model],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((
+                row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?,
+                row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?,
+                row.get(8)?, row.get(9)?, row.get(10)?, row.get(11)?,
+                row.get(12)?, row.get(13)?, row.get(14)?, row.get(15)?,
+                row.get(16)?, row.get(17)?, row.get(18)?, row.get(19)?,
+                row.get(20)?,
+            )),
         )?;
+
+        let (
+            sample_count, avg_ttft_ms, min_ttft_ms, max_ttft_ms,
+            avg_duration_ms, avg_input_tokens, avg_output_tokens, avg_thinking_tokens,
+            thinking_count, avg_cache_read_tokens, cache_read_count, cache_creation_count,
+            error_count, rate_limit_count, overload_count, server_error_count,
+            stall_req_count, end_turn_count, max_tokens_count, stream_count,
+            interrupted_stream_count,
+        ) = row_data;
+
+        if sample_count == 0 {
+            return Ok(serde_json::json!({ "sample_count": 0 }));
+        }
+
+        let n = sample_count as f64;
+
+        // Compute TTFT percentiles from sorted values
+        let ttft_values: Vec<f64> = {
+            let mut stmt = db.prepare(
+                "SELECT ttft_ms FROM requests WHERE model = ?1 AND ttft_ms IS NOT NULL ORDER BY ttft_ms"
+            )?;
+            let rows = stmt.query_map(params![model], |row| row.get::<_, f64>(0))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        let (median_ttft_ms, p95_ttft_ms, p99_ttft_ms, ttft_stddev_ms) = if ttft_values.is_empty() {
+            (None, None, None, None)
+        } else {
+            let len = ttft_values.len();
+            let median = ttft_values[len / 2];
+            let p95 = ttft_values[(len as f64 * 0.95) as usize].min(ttft_values[len - 1]);
+            let p99 = ttft_values[(len as f64 * 0.99) as usize].min(ttft_values[len - 1]);
+            let mean = avg_ttft_ms.unwrap_or(0.0);
+            let variance = ttft_values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / len as f64;
+            (Some(median), Some(p95), Some(p99), Some(variance.sqrt()))
+        };
+
+        // Derived rates
+        let output_input_ratio = match (avg_output_tokens, avg_input_tokens) {
+            (Some(o), Some(i)) if i > 0.0 => Some(o / i),
+            _ => None,
+        };
+        let total_tokens_per_request = match (avg_input_tokens, avg_output_tokens) {
+            (Some(i), Some(o)) => Some(i + o),
+            _ => None,
+        };
+        let thinking_frequency = thinking_count as f64 / n;
+        let thinking_token_ratio = match (avg_thinking_tokens, avg_output_tokens) {
+            (Some(t), Some(o)) if o > 0.0 => Some(t / o),
+            _ => None,
+        };
+        let cache_hit_rate = cache_read_count as f64 / n;
+        let cache_creation_rate = cache_creation_count as f64 / n;
+        let error_rate = error_count as f64 / n;
+        let rate_limit_rate = rate_limit_count as f64 / n;
+        let overload_rate = overload_count as f64 / n;
+        let server_error_rate = server_error_count as f64 / n;
+        let stall_rate = stall_req_count as f64 / n;
+        let end_turn_rate = end_turn_count as f64 / n;
+        let max_tokens_hit_rate = max_tokens_count as f64 / n;
+        let stream_completion_rate = if stream_count > 0 {
+            1.0 - (interrupted_stream_count as f64 / stream_count as f64)
+        } else {
+            1.0
+        };
 
         Ok(serde_json::json!({
             "sample_count": sample_count,
+            // Timing
             "avg_ttft_ms": avg_ttft_ms,
+            "median_ttft_ms": median_ttft_ms,
+            "p95_ttft_ms": p95_ttft_ms,
+            "p99_ttft_ms": p99_ttft_ms,
+            "min_ttft_ms": min_ttft_ms,
+            "max_ttft_ms": max_ttft_ms,
+            "ttft_stddev_ms": ttft_stddev_ms,
+            "avg_duration_ms": avg_duration_ms,
+            // Tokens
+            "avg_input_tokens": avg_input_tokens,
+            "avg_output_tokens": avg_output_tokens,
+            "avg_thinking_tokens": avg_thinking_tokens,
+            "output_input_ratio": output_input_ratio,
+            "total_tokens_per_request": total_tokens_per_request,
+            "thinking_frequency": thinking_frequency,
+            "thinking_token_ratio": thinking_token_ratio,
+            // Cache
+            "cache_hit_rate": cache_hit_rate,
+            "avg_cache_read_tokens": avg_cache_read_tokens,
+            "cache_creation_rate": cache_creation_rate,
+            // Errors
+            "error_rate": error_rate,
+            "rate_limit_rate": rate_limit_rate,
+            "overload_rate": overload_rate,
+            "server_error_rate": server_error_rate,
+            // Streaming
+            "stall_rate": stall_rate,
+            "end_turn_rate": end_turn_rate,
+            "max_tokens_hit_rate": max_tokens_hit_rate,
+            "stream_completion_rate": stream_completion_rate,
         }))
     }
 
