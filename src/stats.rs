@@ -3317,9 +3317,6 @@ impl StatsStore {
         }
     }
 
-    pub fn clear_stats(&self) -> ClearSummary {
-        self.clear(ClearMode::MemoryOnly)
-    }
 
     pub fn clear_all(&self) -> ClearSummary {
         self.clear(ClearMode::StatsAndLogs)
@@ -5694,7 +5691,7 @@ mod tests {
         assert_eq!(table_count("config_snapshots"), 1);
         assert_eq!(table_count("settings_history"), 1);
 
-        let summary = store.clear_stats();
+        let summary = store.clear(ClearMode::MemoryOnly);
 
         assert!(matches!(summary.mode, ClearMode::MemoryOnly));
         assert_eq!(summary.cleared_entries, 1);

@@ -5,8 +5,7 @@ let currentOverviewMode = 'live';
 let overviewRequestToken = 0;
 let overviewRefreshTimer = null;
 
-const CLEAR_MEMORY_BUTTON_LABEL = 'Clear in-memory stats';
-const CLEAR_ALL_BUTTON_LABEL = 'Clear stats + data';
+const CLEAR_ALL_BUTTON_LABEL = 'Clear all data';
 const EMPTY_MODELS_HTML = '<div style="color:var(--text-2);font-size:12px">No models yet</div>';
 
 function updateOverview() {
@@ -192,25 +191,17 @@ async function runResetAction({ buttonId, endpoint, confirmText, pendingText, su
   }
 }
 
-function clearMemoryStats() {
-  return runResetAction({
-    buttonId: 'clear-memory-btn',
-    endpoint: '/api/reset-memory',
-    confirmText: 'Clear only in-memory dashboard stats? Saved SQLite data will be kept.',
-    pendingText: 'Clearing…',
-    successText: (result) => `Cleared ${result.cleared_entries} entr${result.cleared_entries === 1 ? 'y' : 'ies'}`,
-    errorText: 'Failed to clear in-memory stats:'
-  });
-}
-
 function clearAllData() {
   return runResetAction({
-    buttonId: 'clear-data-btn',
+    buttonId: 'clear-all-btn',
     endpoint: '/api/reset',
-    confirmText: 'Clear all saved SQLite request history and reset all dashboard statistics? This cannot be undone.',
+    confirmText: 'Clear all dashboard statistics, saved request history, and model conformance data? This cannot be undone.',
     pendingText: 'Clearing…',
-    successText: (result) => `Cleared ${result.deleted_persisted_entries} saved entr${result.deleted_persisted_entries === 1 ? 'y' : 'ies'}`,
-    errorText: 'Failed to clear saved data and stats:'
+    successText: (result) => {
+      const n = result.deleted_persisted_entries || 0;
+      return `Cleared ${n} entr${n === 1 ? 'y' : 'ies'} + conformance`;
+    },
+    errorText: 'Failed to clear data:'
   });
 }
 

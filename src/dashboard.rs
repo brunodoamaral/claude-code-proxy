@@ -81,7 +81,6 @@ fn build_dashboard_app(
         .route("/api/timeline", get(api_timeline))
         .route("/api/session-graph", get(api_session_graph))
         .route("/api/session-details", get(api_session_details))
-        .route("/api/reset-memory", post(api_reset_memory))
         .route("/api/reset", post(api_reset))
         .route("/api/entry-body", get(api_entry_body))
         .route("/api/claude-sessions", get(api_claude_sessions))
@@ -826,10 +825,6 @@ async fn api_claude_sessions(State(state): State<DashboardState>) -> impl IntoRe
     axum::Json(state.stats.get_claude_sessions())
 }
 
-async fn api_reset_memory(State(state): State<DashboardState>) -> impl IntoResponse {
-    axum::Json(state.stats.clear_stats())
-}
-
 async fn api_reset(State(state): State<DashboardState>) -> impl IntoResponse {
     // Also clear the v2 store (conformance data, model profiles, etc.)
     let _ = state.store.clear_all();
@@ -1520,57 +1515,6 @@ mod tests {
             payload.get("error").and_then(|v| v.as_str()),
             Some("session_id is required")
         );
-
-        let _ = std::fs::remove_dir_all(&log_dir);
-    }
-
-    #[tokio::test]
-    async fn reset_memory_endpoint_clears_entries_but_keeps_persisted_data() {
-        let log_dir = std::env::temp_dir().join(format!(
-            "claude-proxy-dashboard-memory-test-{}",
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&log_dir).unwrap();
-
-        let store = Arc::new(StatsStore::new(
-            100,
-            log_dir.clone(),
-            20.0,
-            8.0,
-            2_097_152,
-            log_dir.clone(),
-        ));
-        store.add_entry(sample_entry());
-        assert_eq!(
-            store
-                .get_entries(10, 0, &EntryFilter::default(), None, None)
-                .len(),
-            1
-        );
-        assert_eq!(store.persisted_entry_count(), 1);
-
-        let app = build_dashboard_app(store.clone(), test_v2_store(), None);
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/api/reset-memory")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(store.get_live_stats().total_requests, 0);
-        assert_eq!(
-            store
-                .get_entries(10, 0, &EntryFilter::default(), None, None)
-                .len(),
-            1
-        );
-        assert_eq!(store.persisted_entry_count(), 1);
-        assert!(store.database_path().exists());
 
         let _ = std::fs::remove_dir_all(&log_dir);
     }

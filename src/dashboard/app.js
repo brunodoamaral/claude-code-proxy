@@ -474,8 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('expand-anomaly-window-btn').addEventListener('click', expandAnomalyWindow);
   document.getElementById('clear-anomaly-focus-btn').addEventListener('click', () => clearAnomalyFocus({ restoreSnapshot: true, reload: true }));
-  document.getElementById('clear-memory-btn').addEventListener('click', clearMemoryStats);
-  document.getElementById('clear-data-btn').addEventListener('click', clearAllData);
+  document.getElementById('clear-all-btn').addEventListener('click', clearAllData);
   const settingsEditor = document.getElementById('settings-claude-json');
   const settingsErrorBanner = document.getElementById('settings-error-banner');
   document.getElementById('settings-apply-btn')?.addEventListener('click', applySettings);
